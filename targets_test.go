@@ -129,11 +129,11 @@ func TestPushNew(t *testing.T) {
 		require.NoError(t, err)
 
 		n := elementAt(x, 0)
-		n.setString("hello")
+		n.set(reflect.ValueOf("hello"))
 		require.Equal(t, []string{"hello"}, d.A)
 
 		n = elementAt(x, 1)
-		n.setString("world")
+		n.set(reflect.ValueOf("world"))
 		require.Equal(t, []string{"hello", "world"}, d.A)
 	})
 
