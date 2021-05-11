@@ -334,17 +334,15 @@ func tryTextUnmarshaler(x target, node ast.Node) (bool, error) {
 		return false, nil
 	}
 
-	t := x.getType()
+	v := x.get()
 
 	// Special case for time, because we allow to unmarshal to it from
 	// different kind of AST nodes.
-	if t == timeType {
+	if v.Type() == timeType {
 		return false, nil
 	}
 
-	v := x.get()
-
-	if t.Implements(textUnmarshalerType) {
+	if v.Type().Implements(textUnmarshalerType) {
 		err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
 		if err != nil {
 			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)

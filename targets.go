@@ -17,9 +17,6 @@ type target interface {
 
 	// Returns the kind of the value pointed at.
 	getKind() reflect.Kind
-
-	// Returns the type of the value pointed at.
-	getType() reflect.Type
 }
 
 // valueTarget just contains a reflect.Value that can be set.
@@ -38,10 +35,6 @@ func (t valueTarget) getKind() reflect.Kind {
 	return reflect.Value(t).Kind()
 }
 
-func (t valueTarget) getType() reflect.Type {
-	return reflect.Value(t).Type()
-}
-
 // interfaceTarget wraps an other target to dereference on get.
 type interfaceTarget struct {
 	x target
@@ -57,10 +50,6 @@ func (t interfaceTarget) set(v reflect.Value) {
 
 func (t interfaceTarget) getKind() reflect.Kind {
 	return t.x.get().Elem().Kind()
-}
-
-func (t interfaceTarget) getType() reflect.Type {
-	return t.x.get().Elem().Type()
 }
 
 // mapTarget targets a specific key of a map.
@@ -81,19 +70,18 @@ func (t mapTarget) getKind() reflect.Kind {
 	return t.v.Type().Elem().Kind()
 }
 
-func (t mapTarget) getType() reflect.Type {
-	return t.v.Type().Elem()
-}
-
 // makes sure that the value pointed at by t is indexable (Slice, Array), or
 // dereferences to an indexable (Ptr, Interface).
 func ensureValueIndexable(t target) error {
-	switch t.getKind() {
-	case reflect.Slice:
-		t.set(reflect.MakeSlice(t.getType(), 0, 0))
-	case reflect.Interface:
-		f := t.get()
+	f := t.get()
 
+	switch f.Type().Kind() {
+	case reflect.Slice:
+		if f.IsNil() {
+			t.set(reflect.MakeSlice(f.Type(), 0, 0))
+			return nil
+		}
+	case reflect.Interface:
 		if f.IsNil() || f.Elem().Type() != sliceInterfaceType {
 			t.set(reflect.MakeSlice(sliceInterfaceType, 0, 0))
 			return nil
@@ -103,7 +91,7 @@ func ensureValueIndexable(t target) error {
 	case reflect.Array:
 		// arrays are always initialized.
 	default:
-		return fmt.Errorf("toml: cannot store array in a %s", t.getKind())
+		return fmt.Errorf("toml: cannot store array in a %s", f.Kind())
 	}
 
 	return nil
@@ -254,10 +242,9 @@ func elementAt(t target, idx int) target {
 		// TODO: use the idx function argument and avoid alloc if possible.
 		idx := f.Len()
 
-		n := reflect.Append(f, reflect.New(f.Type().Elem()).Elem())
-		t.set(n)
+		t.set(reflect.Append(f, reflect.New(f.Type().Elem()).Elem()))
 
-		return valueTarget(n.Index(idx))
+		return valueTarget(t.get().Index(idx))
 	case reflect.Array:
 		if idx >= f.Len() {
 			return nil
@@ -372,7 +359,8 @@ func scopeSlice(shouldAppend bool, t target) target {
 		newSlice := reflect.Append(v, newElem.Elem())
 
 		t.set(newSlice)
-		v = newSlice
+
+		v = t.get()
 	}
 
 	return valueTarget(v.Index(v.Len() - 1))
