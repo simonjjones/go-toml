@@ -8,6 +8,58 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStructTarget_Ensure(t *testing.T) {
+	t.Parallel()
+
+	examples := []struct {
+		desc  string
+		input reflect.Value
+		name  string
+		test  func(v reflect.Value, err error)
+	}{
+		{
+			desc:  "handle a nil slice of string",
+			input: reflect.ValueOf(&struct{ A []string }{}).Elem(),
+			name:  "A",
+			test: func(v reflect.Value, err error) {
+				assert.NoError(t, err)
+				assert.False(t, v.IsNil())
+			},
+		},
+		{
+			desc:  "handle an existing slice of string",
+			input: reflect.ValueOf(&struct{ A []string }{A: []string{"foo"}}).Elem(),
+			name:  "A",
+			test: func(v reflect.Value, err error) {
+				assert.NoError(t, err)
+				require.False(t, v.IsNil())
+
+				s, ok := v.Interface().([]string)
+				if !ok {
+					t.Errorf("interface %v should be castable into []string", s)
+					return
+				}
+
+				assert.Equal(t, []string{"foo"}, s)
+			},
+		},
+	}
+
+	for _, e := range examples {
+		e := e
+		t.Run(e.desc, func(t *testing.T) {
+			t.Parallel()
+
+			d := decoder{}
+			target, _, err := d.scopeTableTarget(false, valueTarget(e.input), e.name)
+			require.NoError(t, err)
+			err = ensureValueIndexable(target)
+			v := target.get()
+			e.test(v, err)
+		})
+	}
+}
+
 func TestStructTarget_SetString(t *testing.T) {
 	t.Parallel()
 
