@@ -12,20 +12,11 @@ type target interface {
 	// Dereferences the target.
 	get() reflect.Value
 
-	// Store a string at the target.
-	setString(v string)
-
-	// Store a boolean at the target
-	setBool(v bool)
-
-	// Store an int64 at the target
-	setInt64(v int64)
-
-	// Store a float64 at the target
-	setFloat64(v float64)
-
 	// Stores any value at the target
 	set(v reflect.Value)
+
+	// Returns the kind of the value pointed at.
+	getKind() reflect.Kind
 }
 
 // valueTarget just contains a reflect.Value that can be set.
@@ -40,20 +31,8 @@ func (t valueTarget) set(v reflect.Value) {
 	reflect.Value(t).Set(v)
 }
 
-func (t valueTarget) setString(v string) {
-	t.get().SetString(v)
-}
-
-func (t valueTarget) setBool(v bool) {
-	t.get().SetBool(v)
-}
-
-func (t valueTarget) setInt64(v int64) {
-	t.get().SetInt(v)
-}
-
-func (t valueTarget) setFloat64(v float64) {
-	t.get().SetFloat(v)
+func (t valueTarget) getKind() reflect.Kind {
+	return reflect.Value(t).Kind()
 }
 
 // interfaceTarget wraps an other target to dereference on get.
@@ -69,20 +48,8 @@ func (t interfaceTarget) set(v reflect.Value) {
 	t.x.set(v)
 }
 
-func (t interfaceTarget) setString(v string) {
-	panic("interface targets should always go through set")
-}
-
-func (t interfaceTarget) setBool(v bool) {
-	panic("interface targets should always go through set")
-}
-
-func (t interfaceTarget) setInt64(v int64) {
-	panic("interface targets should always go through set")
-}
-
-func (t interfaceTarget) setFloat64(v float64) {
-	panic("interface targets should always go through set")
+func (t interfaceTarget) getKind() reflect.Kind {
+	return t.x.get().Elem().Kind()
 }
 
 // mapTarget targets a specific key of a map.
@@ -99,20 +66,8 @@ func (t mapTarget) set(v reflect.Value) {
 	t.v.SetMapIndex(t.k, v)
 }
 
-func (t mapTarget) setString(v string) {
-	t.set(reflect.ValueOf(v))
-}
-
-func (t mapTarget) setBool(v bool) {
-	t.set(reflect.ValueOf(v))
-}
-
-func (t mapTarget) setInt64(v int64) {
-	t.set(reflect.ValueOf(v))
-}
-
-func (t mapTarget) setFloat64(v float64) {
-	t.set(reflect.ValueOf(v))
+func (t mapTarget) getKind() reflect.Kind {
+	return t.v.Type().Elem().Kind()
 }
 
 // makes sure that the value pointed at by t is indexable (Slice, Array), or
@@ -148,9 +103,7 @@ var (
 )
 
 func ensureMapIfInterface(x target) {
-	v := x.get()
-
-	if v.Kind() == reflect.Interface && v.IsNil() {
+	if x.getKind() == reflect.Interface && x.get().IsNil() {
 		newElement := reflect.MakeMap(mapStringInterfaceType)
 
 		x.set(newElement)
@@ -158,30 +111,26 @@ func ensureMapIfInterface(x target) {
 }
 
 func setString(t target, v string) error {
-	f := t.get()
-
-	switch f.Kind() {
+	switch t.getKind() {
 	case reflect.String:
-		t.setString(v)
+		t.set(reflect.ValueOf(v))
 	case reflect.Interface:
 		t.set(reflect.ValueOf(v))
 	default:
-		return fmt.Errorf("toml: cannot assign string to a %s", f.Kind())
+		return fmt.Errorf("toml: cannot assign string to a %s", t.getKind())
 	}
 
 	return nil
 }
 
 func setBool(t target, v bool) error {
-	f := t.get()
-
-	switch f.Kind() {
+	switch t.getKind() {
 	case reflect.Bool:
-		t.setBool(v)
+		t.set(reflect.ValueOf(v))
 	case reflect.Interface:
 		t.set(reflect.ValueOf(v))
 	default:
-		return fmt.Errorf("toml: cannot assign boolean to a %s", f.Kind())
+		return fmt.Errorf("toml: cannot assign boolean to a %s", t.getKind())
 	}
 
 	return nil
@@ -194,11 +143,9 @@ const (
 
 //nolint:funlen,gocognit,cyclop
 func setInt64(t target, v int64) error {
-	f := t.get()
-
-	switch f.Kind() {
+	switch t.getKind() {
 	case reflect.Int64:
-		t.setInt64(v)
+		t.set(reflect.ValueOf(v))
 	case reflect.Int32:
 		if v < math.MinInt32 || v > math.MaxInt32 {
 			return fmt.Errorf("toml: number %d does not fit in an int32", v)
@@ -257,18 +204,16 @@ func setInt64(t target, v int64) error {
 	case reflect.Interface:
 		t.set(reflect.ValueOf(v))
 	default:
-		return fmt.Errorf("toml: integer cannot be assigned to %s", f.Kind())
+		return fmt.Errorf("toml: integer cannot be assigned to %s", t.getKind())
 	}
 
 	return nil
 }
 
 func setFloat64(t target, v float64) error {
-	f := t.get()
-
-	switch f.Kind() {
+	switch t.getKind() {
 	case reflect.Float64:
-		t.setFloat64(v)
+		t.set(reflect.ValueOf(v))
 	case reflect.Float32:
 		if v > math.MaxFloat32 {
 			return fmt.Errorf("toml: number %f does not fit in a float32", v)
@@ -278,7 +223,7 @@ func setFloat64(t target, v float64) error {
 	case reflect.Interface:
 		t.set(reflect.ValueOf(v))
 	default:
-		return fmt.Errorf("toml: float cannot be assigned to %s", f.Kind())
+		return fmt.Errorf("toml: float cannot be assigned to %s", t.getKind())
 	}
 
 	return nil
@@ -324,9 +269,7 @@ func elementAt(t target, idx int) target {
 }
 
 func (d *decoder) scopeTableTarget(shouldAppend bool, t target, name string) (target, bool, error) {
-	x := t.get()
-
-	switch x.Kind() {
+	switch t.getKind() {
 	// Kinds that need to recurse
 	case reflect.Interface:
 		t := scopeInterface(shouldAppend, t)
@@ -349,8 +292,11 @@ func (d *decoder) scopeTableTarget(shouldAppend bool, t target, name string) (ta
 
 	// Terminal kinds
 	case reflect.Struct:
+		x := t.get()
 		return scopeStruct(x, name)
 	case reflect.Map:
+		x := t.get()
+
 		if x.IsNil() {
 			t.set(reflect.MakeMap(x.Type()))
 			x = t.get()
@@ -358,7 +304,7 @@ func (d *decoder) scopeTableTarget(shouldAppend bool, t target, name string) (ta
 
 		return scopeMap(x, name)
 	default:
-		panic(fmt.Sprintf("can't scope on a %s", x.Kind()))
+		panic(fmt.Sprintf("can't scope on a %s", t.getKind()))
 	}
 }
 

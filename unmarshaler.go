@@ -287,19 +287,15 @@ func (d *decoder) scopeWithArrayTable(x target, key ast.Iterator) (target, bool,
 		return x, found, err
 	}
 
-	v := x.get()
-
-	if v.Kind() == reflect.Ptr {
+	if x.getKind() == reflect.Ptr {
 		x = scopePtr(x)
-		v = x.get()
 	}
 
-	if v.Kind() == reflect.Interface {
+	if x.getKind() == reflect.Interface {
 		x = scopeInterface(true, x)
-		v = x.get()
 	}
 
-	switch v.Kind() {
+	switch x.getKind() {
 	case reflect.Slice:
 		x = scopeSlice(true, x)
 	case reflect.Array:
@@ -334,11 +330,11 @@ func (d *decoder) unmarshalKeyValue(x target, node ast.Node) error {
 var textUnmarshalerType = reflect.TypeOf(new(encoding.TextUnmarshaler)).Elem()
 
 func tryTextUnmarshaler(x target, node ast.Node) (bool, error) {
-	v := x.get()
-
-	if v.Kind() != reflect.Struct {
+	if x.getKind() != reflect.Struct {
 		return false, nil
 	}
+
+	v := x.get()
 
 	// Special case for time, because we allow to unmarshal to it from
 	// different kind of AST nodes.
@@ -369,9 +365,9 @@ func tryTextUnmarshaler(x target, node ast.Node) (bool, error) {
 
 //nolint:cyclop
 func (d *decoder) unmarshalValue(x target, node ast.Node) error {
-	v := x.get()
+	if x.getKind() == reflect.Ptr {
+		v := x.get()
 
-	if v.Kind() == reflect.Ptr {
 		if !v.Elem().IsValid() {
 			x.set(reflect.New(v.Type().Elem()))
 			v = x.get()
@@ -549,7 +545,7 @@ func (d *decoder) unmarshalArray(x target, node ast.Node) error {
 	// This problem does not exist with slices because they are addressable.
 	// There may be a better way of doing this, but it is not obvious to me
 	// with the target system.
-	if x.get().Kind() == reflect.Array {
+	if x.getKind() == reflect.Array {
 		container := x
 		newArrayPtr := reflect.New(x.get().Type())
 		x = valueTarget(newArrayPtr.Elem())
