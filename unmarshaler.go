@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"math"
 	"reflect"
 	"time"
 
@@ -102,6 +104,11 @@ func (d *Decoder) Decode(v interface{}) error {
 }
 
 type decoder struct {
+	// Skip expressions until a table is found. This is set to true when a
+	// table could not be create (missing field in map), so all KV expressions
+	// need to be skipped.
+	skipUntilTable bool
+
 	// Tracks position in Go arrays.
 	arrayIndexes map[reflect.Value]int
 
@@ -161,7 +168,6 @@ func keyLocation(node ast.Node) []byte {
 	return unsafe.BytesRange(start, end)
 }
 
-//nolint:funlen,cyclop
 func (d *decoder) fromParser(p *parser, v interface{}) error {
 	r := reflect.ValueOf(v)
 	if r.Kind() != reflect.Ptr {
@@ -172,62 +178,295 @@ func (d *decoder) fromParser(p *parser, v interface{}) error {
 		return fmt.Errorf("toml: decoding pointer target cannot be nil")
 	}
 
-	var (
-		skipUntilTable bool
-		root           target = valueTarget(r.Elem())
-	)
-
-	current := root
+	root := r.Elem()
 
 	for p.NextExpression() {
-		node := p.Expression()
-
-		if node.Kind == ast.KeyValue && skipUntilTable {
-			continue
-		}
-
-		err := d.seen.CheckExpression(node)
+		_, err := d.handleExpression(p, root)
 		if err != nil {
 			return err
-		}
-
-		var found bool
-
-		switch node.Kind {
-		case ast.KeyValue:
-			err = d.unmarshalKeyValue(current, node)
-			found = true
-		case ast.Table:
-			d.strict.EnterTable(node)
-
-			current, found, err = d.scopeWithKey(root, node.Key())
-			if err == nil && found {
-				// In case this table points to an interface,
-				// make sure it at least holds something that
-				// looks like a table. Otherwise the information
-				// of a table is lost, and marshal cannot do the
-				// round trip.
-				ensureMapIfInterface(current)
-			}
-		case ast.ArrayTable:
-			d.strict.EnterArrayTable(node)
-			current, found, err = d.scopeWithArrayTable(root, node.Key())
-		default:
-			panic(fmt.Sprintf("this should not be a top level node type: %s", node.Kind))
-		}
-
-		if err != nil {
-			return err
-		}
-
-		if !found {
-			skipUntilTable = true
-
-			d.strict.MissingTable(node)
 		}
 	}
 
 	return p.Error()
+}
+
+func (d *decoder) handleExpression(p *parser, v reflect.Value) (reflect.Value, error) {
+	node := p.Expression()
+	switch node.Kind {
+	case ast.Table:
+		d.skipUntilTable = false
+		v, found, err := d.handleTable(p, v)
+		d.skipUntilTable = found
+		return v, err
+	case ast.ArrayTable:
+		d.skipUntilTable = false
+		panic("todo")
+	case ast.KeyValue:
+		if d.skipUntilTable {
+			return v, nil
+		}
+		return d.handleKeyValue(p, v)
+	default:
+		panic(fmt.Errorf("should not be handling a %s node", node.Kind))
+	}
+}
+
+func (d *decoder) handleKeyValue(p *parser, v reflect.Value) (reflect.Value, error) {
+	node := p.Expression()
+	assertNode(ast.KeyValue, node)
+
+	k := node.Key()
+	if !k.Next() {
+		panic("should not have an empty key in a kv")
+	}
+
+	return d.scopeKeyValueFast(p, node, k, v)
+}
+
+func (d *decoder) scopeKeyValueFast(p *parser, kv ast.Node, key ast.Iterator, v reflect.Value) (reflect.Value, error) {
+	if !key.Node().Valid() {
+		panic("INVALID NODE")
+	}
+
+	part := string(key.Node().Data)
+
+	switch v.Kind() {
+	case reflect.Interface:
+		elem := v.Elem()
+		if !elem.IsValid() || elem.Type() != mapStringInterfaceType {
+			elem = reflect.MakeMap(mapStringInterfaceType)
+		}
+
+		elem, err := d.scopeKeyValueFast(p, kv, key, elem)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+
+		log.Println("=> addr:", v.CanAddr(), "settable:", v.CanSet())
+		var newIface interface{}
+		v = reflect.ValueOf(&newIface).Elem()
+		v.Set(elem)
+	case reflect.Map:
+		k := reflect.ValueOf(part)
+
+		// check if the element already exists in the map
+		elem := v.MapIndex(k)
+
+		// if not allocate a new one
+		if !elem.IsValid() || elem.IsNil() {
+			elem = reflect.New(v.Type().Elem()).Elem()
+		}
+
+		var err error
+		if key.Next() {
+			elem, err = d.scopeKeyValueFast(p, kv, key, elem)
+		} else {
+			elem, err = d.decodeKeyValueFast(p, kv.Value(), elem)
+		}
+
+		if err != nil {
+			return reflect.Value{}, err
+		}
+
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+
+		v.SetMapIndex(k, elem)
+	case reflect.Struct:
+		f, found, err := fieldOfStruct(v, part)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+
+		if !found {
+			return v, nil
+		}
+
+		var nv reflect.Value
+
+		if key.Next() {
+			nv, err = d.scopeKeyValueFast(p, kv, key, f)
+		} else {
+			nv, err = d.decodeKeyValueFast(p, kv.Value(), f)
+		}
+
+		if err != nil {
+			return reflect.Value{}, err
+		}
+
+		f.Set(nv)
+	default:
+		panic(fmt.Errorf("unhandled kind: %s", v.Kind()))
+	}
+
+	return v, nil
+}
+
+func (d *decoder) decodeKeyValueFast(p *parser, node ast.Node, v reflect.Value) (reflect.Value, error) {
+	var err error
+
+	switch node.Kind {
+	case ast.Integer:
+		err = unmarshalIntegerFast(v, node)
+	case ast.String:
+		err = unmarshalStringFast(v, node)
+	case ast.Float:
+		err = unmarshalFloatFast(v, node)
+	case ast.Bool:
+		err = unmarshalBoolFast(v, node)
+	case ast.DateTime:
+		err = unmarshalDateTimeFast(v, node)
+	case ast.LocalDate:
+		err = unmarshalLocalDateFast(v, node)
+	default:
+		panic(fmt.Errorf("unhandled kind: %s", node.Kind))
+	}
+
+	return v, err
+
+	//if x.getKind() == reflect.Ptr {
+	//	v := x.get()
+	//
+	//	if !v.Elem().IsValid() {
+	//		x.set(reflect.New(v.Type().Elem()))
+	//		v = x.get()
+	//	}
+	//
+	//	return d.unmarshalValue(valueTarget(v.Elem()), node)
+	//}
+	//
+	//ok, err := tryTextUnmarshaler(x, node)
+	//if ok {
+	//	return err
+	//}
+	//
+	//switch node.Kind {
+	//case ast.String:
+	//	return unmarshalString(x, node)
+	//case ast.Bool:
+	//	return unmarshalBool(x, node)
+	//case ast.Integer:
+	//	return unmarshalInteger(x, node)
+	//case ast.Float:
+	//	return unmarshalFloat(x, node)
+	//case ast.Array:
+	//	return d.unmarshalArray(x, node)
+	//case ast.InlineTable:
+	//	return d.unmarshalInlineTable(x, node)
+	//case ast.LocalDateTime:
+	//	return unmarshalLocalDateTime(x, node)
+	//case ast.DateTime:
+	//	return unmarshalDateTime(x, node)
+	//case ast.LocalDate:
+	//	return unmarshalLocalDate(x, node)
+	//default:
+	//	panic(fmt.Sprintf("unhandled node kind %s", node.Kind))
+	//}
+}
+
+func (d *decoder) handleTable(p *parser, v reflect.Value) (reflect.Value, bool, error) {
+	node := p.Expression()
+	assertNode(ast.Table, node)
+
+	key := node.Key()
+
+	if !key.Next() {
+		return reflect.Value{}, false, newDecodeError(node.Data, "empty table keys are not allowed")
+	}
+
+	return d.scopeTableFast(p, key, v)
+}
+
+func (d *decoder) scopeTableFast(p *parser, key ast.Iterator, v reflect.Value) (reflect.Value, bool, error) {
+	if !key.Node().Valid() {
+		panic("node is not valid!")
+	}
+
+	part := string(key.Node().Data)
+
+	switch v.Kind() {
+	case reflect.Map:
+		k := reflect.ValueOf(part)
+		// check if the element already exists in the map
+		elem := v.MapIndex(k)
+
+		// if not allocate a new one
+		if !elem.IsValid() {
+			elem = reflect.New(v.Type().Elem()).Elem()
+		}
+
+		var err error
+		var found bool
+		if !key.Next() {
+			// we're done scoping, now we need to get to the next expression.
+			if !p.NextExpression() {
+				return elem, true, nil
+			}
+			elem, err = d.handleExpression(p, elem)
+		} else {
+			// more parts to of the key to scope
+			elem, found, err = d.scopeTableFast(p, key, elem)
+		}
+
+		if err != nil || !found {
+			return reflect.Value{}, found, err
+		}
+
+		v.SetMapIndex(k, elem)
+	case reflect.Interface:
+		elem := v.Elem()
+		if !elem.IsValid() || elem.Type() != mapStringInterfaceType {
+			elem = reflect.MakeMap(mapStringInterfaceType)
+		}
+
+		var err error
+		var found bool
+		if !key.Next() {
+			// we're done scoping, now we need to get to the next expression.
+			if !p.NextExpression() {
+				return elem, true, nil
+			}
+			elem, err = d.handleExpression(p, elem)
+		} else {
+			// more parts to of the key to scope
+			elem, found, err = d.scopeTableFast(p, key, elem)
+		}
+
+		if err != nil || !found {
+			return reflect.Value{}, found, err
+		}
+
+		v.Set(elem)
+	case reflect.Struct:
+		f, found, err := fieldOfStruct(v, part)
+		if err != nil || !found {
+			return reflect.Value{}, found, err
+		}
+
+		var elem reflect.Value
+		if key.Next() {
+			// more parts of the key to scope
+			elem, found, err = d.scopeTableFast(p, key, f)
+		} else {
+			// we're done scoping, now we need to get to the next expression.
+			if !p.NextExpression() {
+				return f, true, nil
+			}
+			elem, err = d.handleExpression(p, v)
+		}
+
+		if err != nil || !found {
+			return reflect.Value{}, found, err
+		}
+
+		v.Set(elem)
+
+	default:
+		panic(fmt.Errorf("unhandled %s", v.Kind()))
+	}
+
+	return v, true, nil
 }
 
 // scopeWithKey performs target scoping when unmarshaling an ast.KeyValue node.
@@ -405,6 +644,17 @@ func (d *decoder) unmarshalValue(x target, node ast.Node) error {
 	}
 }
 
+func unmarshalLocalDateFast(v reflect.Value, node ast.Node) error {
+	d, err := parseLocalDate(node.Data)
+	if err != nil {
+		return err
+	}
+
+	setDateFast(v, d)
+
+	return nil
+}
+
 func unmarshalLocalDate(x target, node ast.Node) error {
 	assertNode(ast.LocalDate, node)
 
@@ -432,6 +682,18 @@ func unmarshalLocalDateTime(x target, node ast.Node) error {
 
 	setLocalDateTime(x, v)
 
+	return nil
+}
+
+func unmarshalDateTimeFast(v reflect.Value, node ast.Node) error {
+	assertNode(ast.DateTime, node)
+
+	t, err := parseDateTime(node.Data)
+	if err != nil {
+		return err
+	}
+
+	v.Set(reflect.ValueOf(t))
 	return nil
 }
 
@@ -465,6 +727,16 @@ func setDateTime(x target, v time.Time) {
 
 var timeType = reflect.TypeOf(time.Time{})
 
+func setDateFast(v reflect.Value, d LocalDate) {
+	if v.Type() == timeType {
+		t := d.In(time.Local)
+		v.Set(reflect.ValueOf(t))
+		return
+	}
+
+	v.Set(reflect.ValueOf(d))
+}
+
 func setDate(x target, v LocalDate) {
 	if x.get().Type() == timeType {
 		cast := v.In(time.Local)
@@ -476,10 +748,36 @@ func setDate(x target, v LocalDate) {
 	x.set(reflect.ValueOf(v))
 }
 
+func unmarshalStringFast(v reflect.Value, node ast.Node) error {
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(string(node.Data))
+	case reflect.Interface:
+		v.Set(reflect.ValueOf(string(node.Data)))
+	default:
+		return fmt.Errorf("toml: cannot assign string to a %s", v.Kind())
+	}
+	return nil
+}
+
 func unmarshalString(x target, node ast.Node) error {
 	assertNode(ast.String, node)
 
 	return setString(x, string(node.Data))
+}
+
+func unmarshalBoolFast(v reflect.Value, node ast.Node) error {
+	b := node.Data[0] == 't'
+
+	switch v.Kind() {
+	case reflect.Bool:
+		v.SetBool(b)
+	case reflect.Interface:
+		v.Set(reflect.ValueOf(b))
+	default:
+		return fmt.Errorf("toml: cannot assign boolean to a %s", v.Kind())
+	}
+	return nil
 }
 
 func unmarshalBool(x target, node ast.Node) error {
@@ -487,6 +785,69 @@ func unmarshalBool(x target, node ast.Node) error {
 	v := node.Data[0] == 't'
 
 	return setBool(x, v)
+}
+
+func unmarshalIntegerFast(v reflect.Value, node ast.Node) error {
+	i, err := parseInteger(node.Data)
+	if err != nil {
+		return err
+	}
+
+	switch v.Kind() {
+	case reflect.Int64:
+		v.SetInt(i)
+	case reflect.Int32:
+		if i < math.MinInt32 || i > math.MaxInt32 {
+			return fmt.Errorf("toml: number %d does not fit in an int32", i)
+		}
+		v.SetInt(i)
+	case reflect.Int16:
+		if i < math.MinInt16 || i > math.MaxInt16 {
+			return fmt.Errorf("toml: number %d does not fit in an int16", i)
+		}
+		v.SetInt(i)
+	case reflect.Int8:
+		if i < math.MinInt8 || i > math.MaxInt8 {
+			return fmt.Errorf("toml: number %d does not fit in an int8", i)
+		}
+		v.SetInt(i)
+	case reflect.Int:
+		if i < minInt || i > maxInt {
+			return fmt.Errorf("toml: number %d does not fit in an int", i)
+		}
+		v.SetInt(i)
+	case reflect.Uint64:
+		if i < 0 {
+			return fmt.Errorf("toml: negative number %d does not fit in an uint64", i)
+		}
+		v.SetUint(uint64(i))
+	case reflect.Uint32:
+		if i < 0 || i > math.MaxUint32 {
+			return fmt.Errorf("toml: negative number %d does not fit in an uint32", i)
+		}
+		v.SetUint(uint64(i))
+	case reflect.Uint16:
+		if i < 0 || i > math.MaxUint16 {
+			return fmt.Errorf("toml: negative number %d does not fit in an uint16", i)
+		}
+		v.SetUint(uint64(i))
+	case reflect.Uint8:
+		if i < 0 || i > math.MaxUint8 {
+			return fmt.Errorf("toml: negative number %d does not fit in an uint8", i)
+		}
+		v.SetUint(uint64(i))
+	case reflect.Uint:
+		if i < 0 {
+			return fmt.Errorf("toml: negative number %d does not fit in an uint", i)
+		}
+		v.SetUint(uint64(i))
+	case reflect.Interface:
+		v.Set(reflect.ValueOf(i))
+	default:
+		return fmt.Errorf("toml: integer cannot be assigned to %s", v.Kind())
+	}
+
+	return nil
 }
 
 func unmarshalInteger(x target, node ast.Node) error {
@@ -498,6 +859,29 @@ func unmarshalInteger(x target, node ast.Node) error {
 	}
 
 	return setInt64(x, v)
+}
+
+func unmarshalFloatFast(v reflect.Value, node ast.Node) error {
+	f, err := parseFloat(node.Data)
+	if err != nil {
+		return err
+	}
+
+	switch v.Kind() {
+	case reflect.Float64:
+		v.SetFloat(f)
+	case reflect.Float32:
+		if f > math.MaxFloat32 {
+			return fmt.Errorf("toml: number %f does not fit in a float32", f)
+		}
+		v.SetFloat(f)
+	case reflect.Interface:
+		v.Set(reflect.ValueOf(f))
+	default:
+		return fmt.Errorf("toml: float cannot be assigned to %s", v.Kind())
+	}
+
+	return nil
 }
 
 func unmarshalFloat(x target, node ast.Node) error {
