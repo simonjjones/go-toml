@@ -427,9 +427,7 @@ var globalFieldPathsCache = fieldPathsCache{
 	l: sync.RWMutex{},
 }
 
-func scopeStruct(v reflect.Value, name string) (target, bool, error) {
-	//nolint:godox
-	// TODO: cache this, and reduce allocations
+func fieldOfStruct(v reflect.Value, name string) (reflect.Value, bool, error) {
 	fieldPaths, ok := globalFieldPathsCache.get(v.Type())
 	if !ok {
 		fieldPaths = map[string][]int{}
@@ -475,8 +473,18 @@ func scopeStruct(v reflect.Value, name string) (target, bool, error) {
 	}
 
 	if !ok {
-		return nil, false, nil
+		return reflect.Value{}, false, nil
 	}
 
-	return valueTarget(v.FieldByIndex(path)), true, nil
+	return v.FieldByIndex(path), true, nil
+}
+
+func scopeStruct(v reflect.Value, name string) (target, bool, error) {
+	f, found, err := fieldOfStruct(v, name)
+
+	if !found || err != nil {
+		return nil, found, err
+	}
+
+	return valueTarget(f), true, nil
 }
