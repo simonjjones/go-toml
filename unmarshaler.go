@@ -319,6 +319,10 @@ func (d *decoder) decodeKeyValueFast(p *parser, node ast.Node, v reflect.Value) 
 		err = unmarshalDateTimeFast(v, node)
 	case ast.LocalDate:
 		err = unmarshalLocalDateFast(v, node)
+	case ast.InlineTable:
+		err = d.unmarshalInlineTableFast(p, v, node)
+	case ast.Array:
+		err = d.unmarshalArrayFast(p, v, node)
 	default:
 		panic(fmt.Errorf("unhandled kind: %s", node.Kind))
 	}
@@ -908,6 +912,22 @@ func unmarshalFloat(x target, node ast.Node) error {
 	return setFloat64(x, v)
 }
 
+func (d *decoder) unmarshalInlineTableFast(p *parser, v reflect.Value, node ast.Node) error {
+	assertNode(ast.InlineTable, node)
+
+	it := node.Children()
+	for it.Next() {
+		n := it.Node()
+
+		_, err := d.scopeKeyValueFast(p, n, n.Key(), v)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (d *decoder) unmarshalInlineTable(x target, node ast.Node) error {
 	assertNode(ast.InlineTable, node)
 
@@ -924,6 +944,16 @@ func (d *decoder) unmarshalInlineTable(x target, node ast.Node) error {
 	}
 
 	return nil
+}
+
+func (d *decoder) unmarshalArrayFast(p *parser, v reflect.Value, n ast.Node) error {
+	assertNode(ast.Array, n)
+
+	err := ensureValueIndexableFast(v)
+	if err != nil {
+		return err
+	}
+
 }
 
 func (d *decoder) unmarshalArray(x target, node ast.Node) error {
