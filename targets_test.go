@@ -9,7 +9,6 @@ import (
 )
 
 func TestStructTarget_Ensure(t *testing.T) {
-	t.Parallel()
 
 	examples := []struct {
 		desc  string
@@ -48,7 +47,6 @@ func TestStructTarget_Ensure(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-			t.Parallel()
 
 			d := decoder{}
 			target, _, err := d.scopeTableTarget(false, valueTarget(e.input), e.name)
@@ -61,7 +59,6 @@ func TestStructTarget_Ensure(t *testing.T) {
 }
 
 func TestStructTarget_SetString(t *testing.T) {
-	t.Parallel()
 
 	str := "value"
 
@@ -101,7 +98,6 @@ func TestStructTarget_SetString(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-			t.Parallel()
 
 			d := decoder{}
 			target, _, err := d.scopeTableTarget(false, valueTarget(e.input), e.name)
@@ -114,10 +110,8 @@ func TestStructTarget_SetString(t *testing.T) {
 }
 
 func TestPushNew(t *testing.T) {
-	t.Parallel()
 
 	t.Run("slice of strings", func(t *testing.T) {
-		t.Parallel()
 
 		type Doc struct {
 			A []string
@@ -138,7 +132,6 @@ func TestPushNew(t *testing.T) {
 	})
 
 	t.Run("slice of interfaces", func(t *testing.T) {
-		t.Parallel()
 
 		type Doc struct {
 			A []interface{}
@@ -160,7 +153,6 @@ func TestPushNew(t *testing.T) {
 }
 
 func TestScope_Struct(t *testing.T) {
-	t.Parallel()
 
 	examples := []struct {
 		desc  string
@@ -189,7 +181,6 @@ func TestScope_Struct(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-			t.Parallel()
 
 			dec := decoder{}
 			x, found, err := dec.scopeTableTarget(false, valueTarget(e.input), e.name)
