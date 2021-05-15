@@ -387,12 +387,22 @@ func (d *decoder) scopeTableFast(p *parser, key ast.Iterator, v reflect.Value) (
 
 	switch v.Kind() {
 	case reflect.Map:
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+
 		k := reflect.ValueOf(part)
 		// check if the element already exists in the map
 		elem := v.MapIndex(k)
 
 		// if not allocate a new one
+		created := false
 		if !elem.IsValid() {
+			created = true
+			t := v.Type().Elem()
+			if t.Kind() == reflect.Interface {
+				t = mapStringInterfaceType
+			}
 			elem = reflect.New(v.Type().Elem()).Elem()
 		}
 
@@ -401,6 +411,9 @@ func (d *decoder) scopeTableFast(p *parser, key ast.Iterator, v reflect.Value) (
 		if !key.Next() {
 			// we're done scoping, now we need to get to the next expression.
 			if !p.NextExpression() {
+				if created {
+					v.SetMapIndex(k, elem)
+				}
 				return elem, true, nil
 			}
 			elem, err = d.handleExpression(p, elem)
@@ -453,14 +466,14 @@ func (d *decoder) scopeTableFast(p *parser, key ast.Iterator, v reflect.Value) (
 			if !p.NextExpression() {
 				return f, true, nil
 			}
-			elem, err = d.handleExpression(p, v)
+			elem, err = d.handleExpression(p, f)
 		}
 
 		if err != nil || !found {
 			return reflect.Value{}, found, err
 		}
 
-		v.Set(elem)
+		f.Set(elem)
 
 	default:
 		panic(fmt.Errorf("unhandled %s", v.Kind()))
