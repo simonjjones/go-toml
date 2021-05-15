@@ -72,6 +72,31 @@ func (t mapTarget) getKind() reflect.Kind {
 
 // makes sure that the value pointed at by t is indexable (Slice, Array), or
 // dereferences to an indexable (Ptr, Interface).
+func ensureValueIndexableFast(v reflect.Value) error {
+	switch v.Type().Kind() {
+	case reflect.Slice:
+		if v.IsNil() {
+			v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+			return nil
+		}
+	case reflect.Interface:
+		if v.IsNil() || v.Elem().Type() != sliceInterfaceType {
+			v.Set(reflect.MakeSlice(sliceInterfaceType, 0, 0))
+			return nil
+		}
+	case reflect.Ptr:
+		panic("pointer should have already been dereferenced")
+	case reflect.Array:
+		// arrays are always initialized.
+	default:
+		return fmt.Errorf("toml: cannot store array in a %s", v.Kind())
+	}
+
+	return nil
+}
+
+// makes sure that the value pointed at by t is indexable (Slice, Array), or
+// dereferences to an indexable (Ptr, Interface).
 func ensureValueIndexable(t target) error {
 	f := t.get()
 
