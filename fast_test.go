@@ -32,3 +32,19 @@ func TestFastSimpleInterface(t *testing.T) {
 		"b": int64(42),
 	}, m)
 }
+
+func TestFastMultipartKeyInterface(t *testing.T) {
+	m := map[string]interface{}{}
+	err := toml.Unmarshal([]byte(`
+	a.b.c = "hello"
+	b = 42`), &m)
+	require.NoError(t, err)
+	require.Equal(t, map[string]interface{}{
+		"a": map[string]interface{}{
+			"b": map[string]interface{}{
+				"c": "hello",
+			},
+		},
+		"b": int64(42),
+	}, m)
+}
