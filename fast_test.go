@@ -36,15 +36,37 @@ func TestFastSimpleInterface(t *testing.T) {
 func TestFastMultipartKeyInterface(t *testing.T) {
 	m := map[string]interface{}{}
 	err := toml.Unmarshal([]byte(`
+	a.interim = "test"
 	a.b.c = "hello"
 	b = 42`), &m)
 	require.NoError(t, err)
 	require.Equal(t, map[string]interface{}{
 		"a": map[string]interface{}{
+			"interim": "test",
 			"b": map[string]interface{}{
 				"c": "hello",
 			},
 		},
 		"b": int64(42),
+	}, m)
+}
+
+func TestFastExistingMap(t *testing.T) {
+	m := map[string]interface{}{
+		"ints": map[string]int{},
+	}
+	err := toml.Unmarshal([]byte(`
+	ints.one = 1
+	ints.two = 2
+	strings.yo = "hello"`), &m)
+	require.NoError(t, err)
+	require.Equal(t, map[string]interface{}{
+		"ints": map[string]int{
+			"one": 1,
+			"two": 2,
+		},
+		"strings": map[string]interface{}{
+			"yo": "hello",
+		},
 	}, m)
 }

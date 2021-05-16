@@ -337,15 +337,17 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 	case reflect.Struct:
 		// Structs are always valid.
 	case reflect.Map:
+		mk := reflect.ValueOf(string(key.Node().Data))
+
 		if v.IsNil() {
 			object = reflect.MakeMap(v.Type())
 			shouldSet = true
 		}
 
-		mk := reflect.New(object.Type().Key()).Elem()
-		mv := reflect.New(object.Type().Elem()).Elem()
-
-		mk.SetString(string(key.Node().Data))
+		mv := object.MapIndex(mk)
+		if !mv.IsValid() {
+			mv = reflect.New(object.Type().Elem()).Elem()
+		}
 
 		err := d.handleKeyValue(key, value, mv)
 		if err != nil {
@@ -359,11 +361,11 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		} else {
 			object = reflect.MakeMap(mapStringInterfaceType)
 			shouldSet = true
+		}
 
-			err := d.handleKeyValuePart(key, value, object)
-			if err != nil {
-				return err
-			}
+		err := d.handleKeyValuePart(key, value, object)
+		if err != nil {
+			return err
 		}
 	}
 
