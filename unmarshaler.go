@@ -317,16 +317,17 @@ func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Value) error {
-	assertSettable(v)
-
 	if key.Next() {
 		// Still scoping the key
+		return d.handleKeyValuePart(key, value, v)
 	} else {
 		// Done scoping the key.
 		// v is whatever Go value we need to fill.
 		return d.handleValue(value, v)
 	}
+}
 
+func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect.Value) error {
 	object := v
 	shouldSet := false
 
@@ -359,12 +360,11 @@ func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Val
 			object = reflect.MakeMap(mapStringInterfaceType)
 			shouldSet = true
 
-			err := d.handleKeyValue(key, value, object)
+			err := d.handleKeyValuePart(key, value, object)
 			if err != nil {
 				return err
 			}
 		}
-		object = v.Elem()
 	}
 
 	if shouldSet {
