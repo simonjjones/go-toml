@@ -237,7 +237,10 @@ func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) error {
 	for d.nextExpr() {
 		expr := d.expr()
 		if expr.Kind != ast.KeyValue {
-			// rewind
+			// Stash the expression so that fromParser can just loop and use
+			// the right handler.
+			// We could just recurse ourselves here, but at least this gives a
+			// chance to pop the stack a bit.
 			d.stashExpr()
 			return nil
 		}
@@ -271,6 +274,13 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
 		mv := object.MapIndex(mk)
 		if !mv.IsValid() {
 			mv = reflect.New(object.Type().Elem()).Elem()
+		} else if mv.Kind() == reflect.Interface {
+			elem := mv.Elem()
+			if elem.IsValid() {
+				mv = elem
+			} else {
+				mv = reflect.MakeMap(mapStringInterfaceType)
+			}
 		}
 
 		err := d.handleTable(key, mv)
@@ -321,9 +331,46 @@ func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
 		return d.unmarshalString(value, v)
 	case ast.Integer:
 		return d.unmarshalInteger(value, v)
+	case ast.InlineTable:
+		return d.unmarshalInlineTable(value, v)
 	default:
 		panic(fmt.Errorf("handleValue not implemented for %s", value.Kind))
 	}
+}
+
+func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
+	assertNode(ast.InlineTable, itable)
+
+	// Make sure v is an initialized object.
+	switch v.Kind() {
+	case reflect.Map:
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+	case reflect.Struct:
+	// structs are always initialized.
+	case reflect.Interface:
+		elem := v.Elem()
+		if !elem.IsValid() {
+			elem = reflect.MakeMap(mapStringInterfaceType)
+			v.Set(elem)
+		}
+		return d.unmarshalInlineTable(itable, elem)
+	default:
+		return newDecodeError(itable.Data, "cannot store inline table in Go type %s", v.Kind())
+	}
+
+	it := itable.Children()
+	for it.Next() {
+		n := it.Node()
+
+		err := d.handleKeyValue(n.Key(), n.Value(), v)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *decoder) unmarshalInteger(value ast.Node, v reflect.Value) error {
