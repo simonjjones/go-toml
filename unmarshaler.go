@@ -107,6 +107,11 @@ type decoder struct {
 	// TODO: Think about removing later.
 	p *parser
 
+	// Flag indicating that the current expression is stashed.
+	// If set to true, calling nextExpr will not actually pull a new expression
+	// but turn off the flag instead.
+	stashedExpr bool
+
 	// Skip expressions until a table is found. This is set to true when a
 	// table could not be create (missing field in map), so all KV expressions
 	// need to be skipped.
@@ -123,6 +128,22 @@ type decoder struct {
 
 	// Strict mode
 	strict strict
+}
+
+func (d *decoder) expr() ast.Node {
+	return d.p.Expression()
+}
+
+func (d *decoder) nextExpr() bool {
+	if d.stashedExpr {
+		d.stashedExpr = false
+		return true
+	}
+	return d.p.NextExpression()
+}
+
+func (d *decoder) stashExpr() {
+	d.stashedExpr = true
 }
 
 func (d *decoder) arrayIndex(shouldAppend bool, v reflect.Value) int {
@@ -166,8 +187,8 @@ func (d *decoder) FromParser(v interface{}) error {
 }
 
 func (d *decoder) fromParser(root reflect.Value) error {
-	for d.p.NextExpression() {
-		err := d.handleRootExpression(d.p.Expression(), root)
+	for d.nextExpr() {
+		err := d.handleRootExpression(d.expr(), root)
 		if err != nil {
 			return err
 		}
@@ -194,11 +215,95 @@ func (d *decoder) handleRootExpression(expr ast.Node, v reflect.Value) error {
 	case ast.KeyValue:
 		return d.handleKeyValue(expr.Key(), expr.Value(), v)
 	case ast.Table:
-		panic("not implemented yet")
+		return d.handleTable(expr.Key(), v)
 	case ast.ArrayTable:
 		panic("not implemented yet")
 	default:
 		panic(fmt.Errorf("parser should not permit expression of kind %s at document root", expr.Kind))
+	}
+
+	return nil
+}
+
+// HandleTable returns a reference when it has checked the next expression but
+// cannot handle it.
+func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) error {
+	if key.Next() {
+		// Still scoping the key
+		return d.handleTablePart(key, v)
+	}
+	// Done scoping the key.
+	// Now handle all the key-value expressions in this table.
+	for d.nextExpr() {
+		expr := d.expr()
+		if expr.Kind != ast.KeyValue {
+			// rewind
+			d.stashExpr()
+			return nil
+		}
+
+		err := d.handleKeyValue(expr.Key(), expr.Value(), v)
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
+	object := v
+	shouldSet := false
+
+	// First, dispatch over v to make sure it is a valid object.
+	// There is no guarantee over what it could be.
+	switch v.Kind() {
+	case reflect.Map:
+		// Create the key for the map element. For now assume it's a string.
+		mk := reflect.ValueOf(string(key.Node().Data))
+
+		// If the map does not exist, create it.
+		if v.IsNil() {
+			object = reflect.MakeMap(v.Type())
+			shouldSet = true
+		}
+
+		mv := object.MapIndex(mk)
+		if !mv.IsValid() {
+			mv = reflect.New(object.Type().Elem()).Elem()
+		}
+
+		err := d.handleTable(key, mv)
+		if err != nil {
+			return err
+		}
+
+		object.SetMapIndex(mk, mv)
+	case reflect.Struct:
+		f, found, err := structField(v, string(key.Node().Data))
+		if err != nil || !found {
+			return err
+		}
+
+		return d.handleTable(key, f)
+	case reflect.Interface:
+		if v.Elem().IsValid() {
+			object = v.Elem()
+		} else {
+			object = reflect.MakeMap(mapStringInterfaceType)
+			shouldSet = true
+		}
+
+		err := d.handleTablePart(key, object)
+		if err != nil {
+			return err
+		}
+	default:
+		panic(fmt.Errorf("unhandled: %s", v.Kind()))
+	}
+
+	if shouldSet {
+		v.Set(object)
 	}
 
 	return nil
@@ -322,11 +427,10 @@ func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Val
 	if key.Next() {
 		// Still scoping the key
 		return d.handleKeyValuePart(key, value, v)
-	} else {
-		// Done scoping the key.
-		// v is whatever Go value we need to fill.
-		return d.handleValue(value, v)
 	}
+	// Done scoping the key.
+	// v is whatever Go value we need to fill.
+	return d.handleValue(value, v)
 }
 
 func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect.Value) error {
