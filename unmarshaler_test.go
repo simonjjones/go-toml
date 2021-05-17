@@ -102,7 +102,6 @@ func TestUnmarshal_Integers(t *testing.T) {
 
 //nolint:funlen
 func TestUnmarshal_Floats(t *testing.T) {
-
 	examples := []struct {
 		desc     string
 		input    string

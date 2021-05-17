@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"math"
 	"reflect"
+	"strings"
+	"sync"
 
 	"github.com/pelletier/go-toml/v2/internal/ast"
 	"github.com/pelletier/go-toml/v2/internal/tracker"
@@ -334,11 +336,11 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
-	case reflect.Struct:
-		// Structs are always valid.
 	case reflect.Map:
+		// Create the key for the map element. For now assume it's a string.
 		mk := reflect.ValueOf(string(key.Node().Data))
 
+		// If the map does not exist, create it.
 		if v.IsNil() {
 			object = reflect.MakeMap(v.Type())
 			shouldSet = true
@@ -355,6 +357,13 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		}
 
 		object.SetMapIndex(mk, mv)
+	case reflect.Struct:
+		f, found, err := structField(v, string(key.Node().Data))
+		if err != nil || !found {
+			return err
+		}
+
+		return d.handleKeyValue(key, value, f)
 	case reflect.Interface:
 		if v.Elem().IsValid() {
 			object = v.Elem()
@@ -367,6 +376,8 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		if err != nil {
 			return err
 		}
+	default:
+		panic(fmt.Errorf("unhandled: %s", v.Kind()))
 	}
 
 	if shouldSet {
@@ -385,6 +396,86 @@ func initAndDereferencePointer(v reflect.Value) reflect.Value {
 		elem = v.Elem()
 	}
 	return elem
+}
+
+type fieldPathsMap = map[string][]int
+
+type fieldPathsCache struct {
+	m map[reflect.Type]fieldPathsMap
+	l sync.RWMutex
+}
+
+func (c *fieldPathsCache) get(t reflect.Type) (fieldPathsMap, bool) {
+	c.l.RLock()
+	paths, ok := c.m[t]
+	c.l.RUnlock()
+
+	return paths, ok
+}
+
+func (c *fieldPathsCache) set(t reflect.Type, m fieldPathsMap) {
+	c.l.Lock()
+	c.m[t] = m
+	c.l.Unlock()
+}
+
+var globalFieldPathsCache = fieldPathsCache{
+	m: map[reflect.Type]fieldPathsMap{},
+	l: sync.RWMutex{},
+}
+
+func structField(v reflect.Value, name string) (reflect.Value, bool, error) {
+	//nolint:godox
+	// TODO: cache this, and reduce allocations
+	fieldPaths, ok := globalFieldPathsCache.get(v.Type())
+	if !ok {
+		fieldPaths = map[string][]int{}
+
+		path := make([]int, 0, 16)
+
+		var walk func(reflect.Value)
+		walk = func(v reflect.Value) {
+			t := v.Type()
+			for i := 0; i < t.NumField(); i++ {
+				l := len(path)
+				path = append(path, i)
+				f := t.Field(i)
+
+				if f.Anonymous {
+					walk(v.Field(i))
+				} else if f.PkgPath == "" {
+					// only consider exported fields
+					fieldName, ok := f.Tag.Lookup("toml")
+					if !ok {
+						fieldName = f.Name
+					}
+
+					pathCopy := make([]int, len(path))
+					copy(pathCopy, path)
+
+					fieldPaths[fieldName] = pathCopy
+					// extra copy for the case-insensitive match
+					fieldPaths[strings.ToLower(fieldName)] = pathCopy
+				}
+				path = path[:l]
+			}
+		}
+
+		walk(v)
+
+		globalFieldPathsCache.set(v.Type(), fieldPaths)
+	}
+
+	path, ok := fieldPaths[name]
+	if !ok {
+		path, ok = fieldPaths[strings.ToLower(name)]
+	}
+
+	if !ok {
+		return reflect.Value{}, false, nil
+	}
+
+	return v.FieldByIndex(path), true, nil
 }
 
 func assertNode(expected ast.Kind, node ast.Node) {
