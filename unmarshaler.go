@@ -399,7 +399,12 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
 
 		mv := object.MapIndex(mk)
 		if !mv.IsValid() {
-			mv = reflect.New(object.Type().Elem()).Elem()
+			t := object.Type().Elem()
+			if t.Kind() == reflect.Interface {
+				mv = reflect.MakeMap(mapStringInterfaceType)
+			} else {
+				mv = reflect.New(t).Elem()
+			}
 		} else if mv.Kind() == reflect.Interface {
 			elem := mv.Elem()
 			if elem.IsValid() {
