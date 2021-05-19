@@ -1,6 +1,7 @@
 package toml
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"io"
@@ -215,27 +216,31 @@ func (d *decoder) handleRootExpression(expr ast.Node, v reflect.Value) error {
 		panic("should only be called with a valid expression")
 	}
 
+	var x reflect.Value
+	var err error
+
 	switch expr.Kind {
 	case ast.KeyValue:
-		return d.handleKeyValue(expr.Key(), expr.Value(), v)
+		x, err = d.handleKeyValue(expr.Key(), expr.Value(), v)
 	case ast.Table:
-		return d.handleTable(expr.Key(), v)
+		x, err = d.handleTable(expr.Key(), v)
 	case ast.ArrayTable:
-		_, err := d.handleArrayTable(expr.Key(), v)
-		return err
+		x, err = d.handleArrayTable(expr.Key(), v)
 	default:
 		panic(fmt.Errorf("parser should not permit expression of kind %s at document root", expr.Kind))
 	}
 
-	return nil
+	if err == nil {
+		v.Set(x)
+	}
+	return err
 }
 
 func (d *decoder) handleArrayTable(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
 	if key.Next() {
 		return d.handleArrayTablePart(key, v)
 	}
-	err := d.handleKeyValues(v)
-	return v, err
+	return d.handleKeyValues(v)
 }
 
 func makeInterfaceValue(last bool) reflect.Value {
@@ -286,9 +291,6 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 // TODO: this function is basically a copy-paste from handleArrayPart.
 //   Find a way to refactor.
 func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
-	var err error
-	object := v
-	shouldSet := false
 	last := !key.Node().Next().Valid()
 
 	// First, dispatch over v to make sure it is a valid object.
@@ -300,11 +302,10 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
-			object = reflect.MakeMap(v.Type())
-			shouldSet = true
+			v = reflect.MakeMap(v.Type())
 		}
 
-		mv := object.MapIndex(mk)
+		mv := v.MapIndex(mk)
 
 		if !mv.IsValid() {
 			// If there is no value in the map, create a new one according to
@@ -316,7 +317,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 			if t.Kind() == reflect.Interface {
 				mv = makeInterfaceValue(last)
 			} else {
-				mv = reflect.New(object.Type().Elem()).Elem()
+				mv = reflect.New(v.Type().Elem()).Elem()
 			}
 		} else if mv.Kind() == reflect.Interface {
 			mv = mv.Elem()
@@ -330,7 +331,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 			return mv, err
 		}
 
-		object.SetMapIndex(mk, mv)
+		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
 		if err != nil || !found {
@@ -338,37 +339,36 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		}
 
 		x, err := d.handleArrayTableCollection(key, f)
-		f.Set(x)
-
-		return v, err
-	case reflect.Interface:
-		if v.Elem().IsValid() {
-			object = v.Elem()
-		} else {
-			object = reflect.MakeMap(mapStringInterfaceType)
-			shouldSet = true
-		}
-
-		object, err = d.handleArrayTablePart(key, object)
 		if err != nil {
 			return reflect.Value{}, err
 		}
+		f.Set(x)
+	case reflect.Interface:
+		if v.Elem().IsValid() {
+			v = v.Elem()
+		} else {
+			v = reflect.MakeMap(mapStringInterfaceType)
+		}
+
+		return d.handleArrayTablePart(key, v)
 	default:
 		panic(fmt.Errorf("unhandled: %s", v.Kind()))
 	}
 
-	if shouldSet {
-		v.Set(object)
-	}
-
-	return object, nil
+	return v, nil
 }
 
 // HandleTable returns a reference when it has checked the next expression but
 // cannot handle it.
-func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) error {
+func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
 	if v.Kind() == reflect.Slice {
-		v = v.Index(v.Len() - 1)
+		elem := v.Index(v.Len() - 1)
+		x, err := d.handleTable(key, elem)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		elem.Set(x)
+		return v, nil
 	}
 	if key.Next() {
 		// Still scoping the key
@@ -381,7 +381,8 @@ func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) error {
 
 // Handle root expressions until the end of the document or the next
 // non-key-value.
-func (d *decoder) handleKeyValues(v reflect.Value) error {
+func (d *decoder) handleKeyValues(v reflect.Value) (reflect.Value, error) {
+	var err error
 	for d.nextExpr() {
 		expr := d.expr()
 		if expr.Kind != ast.KeyValue {
@@ -390,21 +391,18 @@ func (d *decoder) handleKeyValues(v reflect.Value) error {
 			// We could just recurse ourselves here, but at least this gives a
 			// chance to pop the stack a bit.
 			d.stashExpr()
-			return nil
+			break
 		}
 
-		err := d.handleKeyValue(expr.Key(), expr.Value(), v)
+		v, err = d.handleKeyValue(expr.Key(), expr.Value(), v)
 		if err != nil {
-			return err
+			return v, err
 		}
 	}
-	return nil
+	return v, nil
 }
 
-func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
-	object := v
-	shouldSet := false
-
+func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
@@ -414,13 +412,12 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
-			object = reflect.MakeMap(v.Type())
-			shouldSet = true
+			v = reflect.MakeMap(v.Type())
 		}
 
-		mv := object.MapIndex(mk)
+		mv := v.MapIndex(mk)
 		if !mv.IsValid() {
-			t := object.Type().Elem()
+			t := v.Type().Elem()
 			if t.Kind() == reflect.Interface {
 				mv = reflect.MakeMap(mapStringInterfaceType)
 			} else {
@@ -435,40 +432,71 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) error {
 			}
 		}
 
-		err := d.handleTable(key, mv)
+		mv, err := d.handleTable(key, mv)
 		if err != nil {
-			return err
+			return reflect.Value{}, err
 		}
 
-		object.SetMapIndex(mk, mv)
+		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
 		if err != nil || !found {
-			return err
+			return reflect.Value{}, err
 		}
 
-		return d.handleTable(key, f)
+		x, err := d.handleTable(key, f)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+
+		f.Set(x)
+
+		return v, nil
 	case reflect.Interface:
 		if v.Elem().IsValid() {
-			object = v.Elem()
+			v = v.Elem()
 		} else {
-			object = reflect.MakeMap(mapStringInterfaceType)
-			shouldSet = true
+			v = reflect.MakeMap(mapStringInterfaceType)
 		}
 
-		err := d.handleTablePart(key, object)
-		if err != nil {
-			return err
-		}
+		return d.handleTablePart(key, v)
 	default:
 		panic(fmt.Errorf("unhandled: %s", v.Kind()))
 	}
 
-	if shouldSet {
-		v.Set(object)
+	return v, nil
+}
+
+func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
+	if v.Kind() != reflect.Struct {
+		return false, nil
 	}
 
-	return nil
+	// Special case for time, because we allow to unmarshal to it from
+	// different kind of AST nodes.
+	if v.Type() == timeType {
+		return false, nil
+	}
+
+	if v.Type().Implements(textUnmarshalerType) {
+		err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
+		if err != nil {
+			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
+		}
+
+		return true, nil
+	}
+
+	if v.CanAddr() && v.Addr().Type().Implements(textUnmarshalerType) {
+		err := v.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
+		if err != nil {
+			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
@@ -476,6 +504,11 @@ func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
 
 	for v.Kind() == reflect.Ptr {
 		v = initAndDereferencePointer(v)
+	}
+
+	ok, err := tryTextUnmarshaler(value, v)
+	if ok || err != nil {
+		return err
 	}
 
 	switch value.Kind {
@@ -583,11 +616,12 @@ func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
 		return newDecodeError(itable.Data, "cannot store inline table in Go type %s", v.Kind())
 	}
 
+	var err error
 	it := itable.Children()
 	for it.Next() {
 		n := it.Node()
 
-		err := d.handleKeyValue(n.Key(), n.Value(), v)
+		v, err = d.handleKeyValue(n.Key(), n.Value(), v)
 		if err != nil {
 			return err
 		}
@@ -746,31 +780,27 @@ func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
 	return err
 }
 
-func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Value) error {
+func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
 	if key.Next() {
 		// Still scoping the key
 		return d.handleKeyValuePart(key, value, v)
 	}
 	// Done scoping the key.
 	// v is whatever Go value we need to fill.
-	return d.handleValue(value, v)
+	return v, d.handleValue(value, v)
 }
 
-func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect.Value) error {
-	object := v
-	shouldSet := false
-
+func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
 	case reflect.Map:
-		// Create the key for the map element. For now assume it's a string.
 		mk := reflect.ValueOf(string(key.Node().Data))
 
 		keyType := v.Type().Key()
 		if !mk.Type().AssignableTo(keyType) {
 			if !mk.Type().ConvertibleTo(keyType) {
-				return fmt.Errorf("toml: cannot convert map key of type %s to expected type %s", mk.Type(), keyType)
+				return reflect.Value{}, fmt.Errorf("toml: cannot convert map key of type %s to expected type %s", mk.Type(), keyType)
 			}
 
 			mk = mk.Convert(keyType)
@@ -778,49 +808,65 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
-			object = reflect.MakeMap(v.Type())
-			shouldSet = true
+			v = reflect.MakeMap(v.Type())
 		}
 
-		mv := object.MapIndex(mk)
+		mv := v.MapIndex(mk)
 		if !mv.IsValid() {
-			mv = reflect.New(object.Type().Elem()).Elem()
+			mv = reflect.New(v.Type().Elem()).Elem()
 		}
 
-		err := d.handleKeyValue(key, value, mv)
+		mv, err := d.handleKeyValue(key, value, mv)
 		if err != nil {
-			return err
+			return reflect.Value{}, err
 		}
 
-		object.SetMapIndex(mk, mv)
+		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
 		if err != nil || !found {
-			return err
+			return reflect.Value{}, err
 		}
 
-		return d.handleKeyValue(key, value, f)
-	case reflect.Interface:
-		if v.Elem().IsValid() {
-			object = v.Elem()
-		} else {
-			object = reflect.MakeMap(mapStringInterfaceType)
-			shouldSet = true
-		}
-
-		err := d.handleKeyValuePart(key, value, object)
+		x, err := d.handleKeyValue(key, value, f)
 		if err != nil {
-			return err
+			return reflect.Value{}, err
 		}
+
+		f.Set(x)
+
+		return v, err
+	case reflect.Interface:
+		v = v.Elem()
+
+		// Following encoding/toml: decoding an object into an interface{}, it
+		// needs to always hold a map[string]interface{}. This is for the types
+		// to be consistent whether a previous value was set or not.
+		if !v.IsValid() || v.Type() != mapStringInterfaceType {
+			v = reflect.MakeMap(mapStringInterfaceType)
+		}
+
+		return d.handleKeyValuePart(key, value, v)
+	case reflect.Ptr:
+		elem := v.Elem()
+		if !elem.IsValid() {
+			ptr := reflect.New(v.Type().Elem())
+			v.Set(ptr)
+			elem = ptr.Elem()
+		}
+
+		elem, err := d.handleKeyValuePart(key, value, elem)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		v.Elem().Set(elem)
+
+		return v, nil
 	default:
 		panic(fmt.Errorf("unhandled: %s", v.Kind()))
 	}
 
-	if shouldSet {
-		v.Set(object)
-	}
-
-	return nil
+	return v, nil
 }
 
 func initAndDereferencePointer(v reflect.Value) reflect.Value {
@@ -828,7 +874,6 @@ func initAndDereferencePointer(v reflect.Value) reflect.Value {
 	if v.IsNil() {
 		ptr := reflect.New(v.Type().Elem())
 		v.Set(ptr)
-
 	}
 	elem = v.Elem()
 	return elem
