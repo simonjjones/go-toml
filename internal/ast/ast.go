@@ -76,6 +76,10 @@ type Node struct {
 	root *Root
 }
 
+func (n *Node) ParsedString() string {
+	return *(*string)(unsafe.Pointer(&n.Parsed))
+}
+
 // Next returns a copy of the next node, or an invalid Node if there is no
 // next node.
 func (n *Node) Next() *Node {

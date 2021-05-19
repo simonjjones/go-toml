@@ -99,6 +99,7 @@ func (s *SeenTracker) CheckExpression(node *ast.Node) error {
 	}
 
 }
+
 func (s *SeenTracker) checkTable(node *ast.Node) error {
 	s.current = s.root
 
@@ -178,7 +179,7 @@ func (s *SeenTracker) checkKeyValue(context *info, node *ast.Node) error {
 
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
-		k := string(it.Node().Parsed)
+		k := it.Node().ParsedString()
 		child, found := context.has(k)
 		if found {
 			if child.kind != tableKind {

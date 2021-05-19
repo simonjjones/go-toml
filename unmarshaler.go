@@ -350,7 +350,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 	switch v.Kind() {
 	case reflect.Map:
 		// Create the key for the map element. For now assume it's a string.
-		mk := reflect.ValueOf(string(key.Node().Parsed))
+		mk := reflect.ValueOf(key.Node().ParsedString())
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
@@ -464,7 +464,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 	switch v.Kind() {
 	case reflect.Map:
 		// Create the key for the map element. For now assume it's a string.
-		mk := reflect.ValueOf(string(key.Node().Parsed))
+		mk := reflect.ValueOf(key.Node().ParsedString())
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
@@ -495,7 +495,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Parsed))
+		f, found, err := structField(v, key.Node().ParsedString())
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -880,9 +880,9 @@ func (d *decoder) unmarshalString(value *ast.Node, v reflect.Value) error {
 
 	switch v.Kind() {
 	case reflect.String:
-		v.SetString(string(value.Parsed))
+		v.SetString(value.ParsedString())
 	case reflect.Interface:
-		v.Set(reflect.ValueOf(string(value.Parsed)))
+		v.Set(reflect.ValueOf(value.ParsedString()))
 	default:
 		err = fmt.Errorf("toml: cannot store TOML string into a Go %s", v.Kind())
 	}
@@ -920,7 +920,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
 	case reflect.Map:
-		mk := reflect.ValueOf(string(key.Node().Parsed))
+		mk := reflect.ValueOf(key.Node().ParsedString())
 
 		keyType := v.Type().Key()
 		if !mk.Type().AssignableTo(keyType) {
@@ -954,7 +954,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Parsed))
+		f, found, err := structField(v, key.Node().ParsedString())
 		if err != nil {
 			return reflect.Value{}, err
 		}
