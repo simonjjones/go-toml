@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pelletier/go-toml/v2/benchmetrics"
 	"github.com/pelletier/go-toml/v2/internal/ast"
 	"github.com/pelletier/go-toml/v2/internal/tracker"
 )
@@ -568,8 +569,6 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 }
 
 func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
-	assertSettable(v)
-
 	for v.Kind() == reflect.Ptr {
 		v = initAndDereferencePointer(v)
 	}
@@ -604,8 +603,6 @@ func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
-	assertNode(ast.Array, array)
-
 	switch v.Kind() {
 	case reflect.Slice:
 		if v.IsNil() {
@@ -618,6 +615,7 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 	case reflect.Interface:
 		elem := v.Elem()
 		if !elem.IsValid() {
+			benchmetrics.IncCounter(benchmetrics.SliceNotValid)
 			elem = reflect.New(sliceInterfaceType).Elem()
 			elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
 		} else if elem.Kind() == reflect.Slice {
@@ -625,6 +623,7 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 				elem = reflect.New(sliceInterfaceType).Elem()
 				elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
 			} else if !elem.CanSet() {
+				benchmetrics.IncCounter(benchmetrics.SliceNotSet)
 				nelem := reflect.New(sliceInterfaceType).Elem()
 				nelem.Set(reflect.MakeSlice(sliceInterfaceType, elem.Len(), elem.Cap()))
 				reflect.Copy(nelem, elem)
@@ -647,12 +646,16 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 
 	it := array.Children()
 	idx := 0
+
+	elem := reflect.New(elemType).Elem()
+	zero := reflect.Zero(elemType)
+
 	for it.Next() {
 		n := it.Node()
 
 		// TODO: optimize
 		if v.Kind() == reflect.Slice {
-			elem := reflect.New(elemType).Elem()
+			elem.Set(zero)
 
 			err := d.handleValue(n, elem)
 			if err != nil {
@@ -677,8 +680,6 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
-	assertNode(ast.InlineTable, itable)
-
 	// Make sure v is an initialized object.
 	switch v.Kind() {
 	case reflect.Map:
@@ -713,8 +714,6 @@ func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalDateTime(value ast.Node, v reflect.Value) error {
-	assertNode(ast.DateTime, value)
-
 	dt, err := parseDateTime(value.Data)
 	if err != nil {
 		return err
@@ -725,8 +724,6 @@ func (d *decoder) unmarshalDateTime(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalLocalDate(value ast.Node, v reflect.Value) error {
-	assertNode(ast.LocalDate, value)
-
 	ld, err := parseLocalDate(value.Data)
 	if err != nil {
 		return err
@@ -745,8 +742,6 @@ func (d *decoder) unmarshalLocalDate(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalLocalDateTime(value ast.Node, v reflect.Value) error {
-	assertNode(ast.LocalDateTime, value)
-
 	ldt, rest, err := parseLocalDateTime(value.Data)
 	if err != nil {
 		return err
@@ -769,7 +764,6 @@ func (d *decoder) unmarshalLocalDateTime(value ast.Node, v reflect.Value) error 
 }
 
 func (d *decoder) unmarshalBool(value ast.Node, v reflect.Value) error {
-	assertNode(ast.Bool, value)
 	b := value.Data[0] == 't'
 
 	switch v.Kind() {
@@ -785,8 +779,6 @@ func (d *decoder) unmarshalBool(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalFloat(value ast.Node, v reflect.Value) error {
-	assertNode(ast.Float, value)
-
 	f, err := parseFloat(value.Data)
 	if err != nil {
 		return err
@@ -810,8 +802,6 @@ func (d *decoder) unmarshalFloat(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalInteger(value ast.Node, v reflect.Value) error {
-	assertNode(ast.Integer, value)
-
 	const (
 		maxInt = int64(^uint(0) >> 1)
 		minInt = -maxInt - 1
@@ -890,8 +880,6 @@ func (d *decoder) unmarshalInteger(value ast.Node, v reflect.Value) error {
 }
 
 func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
-	assertNode(ast.String, value)
-
 	var err error
 
 	switch v.Kind() {
@@ -1108,27 +1096,4 @@ func structField(v reflect.Value, name string) (reflect.Value, bool, error) {
 	}
 
 	return v.FieldByIndex(path), true, nil
-}
-
-func assertNode(expected ast.Kind, node ast.Node) {
-	if node.Kind != expected {
-		panic(fmt.Sprintf("expected node of kind %s, not %s", expected, node.Kind))
-	}
-}
-func assertSettable(v reflect.Value) {
-	if !v.CanAddr() {
-		panic(fmt.Errorf("%s is not addressable (kind: %s)", v, v.Kind()))
-	}
-	if !v.CanSet() {
-		panic(fmt.Errorf("%s is not settable", v))
-	}
-}
-
-func assertObject(v reflect.Value) {
-	switch v.Kind() {
-	case reflect.Map:
-	case reflect.Struct:
-	default:
-		panic(fmt.Errorf("expected %s to be a Map or Struct, not %s", v, v.Kind()))
-	}
 }

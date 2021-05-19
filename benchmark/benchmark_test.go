@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/benchmetrics"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,6 +139,7 @@ func BenchmarkReferenceFile(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
+	benchmetrics.ResetCounters()
 	b.SetBytes(int64(len(bytes)))
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -148,6 +150,7 @@ func BenchmarkReferenceFile(b *testing.B) {
 			panic(err)
 		}
 	}
+	benchmetrics.Report(b)
 }
 
 func TestReferenceFile(t *testing.T) {

@@ -3,6 +3,7 @@ package tracker
 import (
 	"fmt"
 
+	"github.com/pelletier/go-toml/v2/benchmetrics"
 	"github.com/pelletier/go-toml/v2/internal/ast"
 )
 
@@ -28,6 +29,8 @@ func (k keyKind) String() string {
 	}
 	panic("missing keyKind string mapping")
 }
+
+var seenCalls uint64
 
 // SeenTracker tracks which keys have been seen with which TOML type to flag duplicates
 // and mismatches according to the spec.
@@ -81,6 +84,7 @@ func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
 // CheckExpression takes a top-level node and checks that it does not contain keys
 // that have been seen in previous calls, and validates that types are consistent.
 func (s *SeenTracker) CheckExpression(node ast.Node) error {
+	benchmetrics.IncCounter(benchmetrics.CheckExpression)
 	if s.root == nil {
 		s.root = &info{
 			kind: tableKind,
