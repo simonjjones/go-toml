@@ -767,6 +767,15 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		// Create the key for the map element. For now assume it's a string.
 		mk := reflect.ValueOf(string(key.Node().Data))
 
+		keyType := v.Type().Key()
+		if !mk.Type().AssignableTo(keyType) {
+			if !mk.Type().ConvertibleTo(keyType) {
+				return fmt.Errorf("toml: cannot convert map key of type %s to expected type %s", mk.Type(), keyType)
+			}
+
+			mk = mk.Convert(keyType)
+		}
+
 		// If the map does not exist, create it.
 		if v.IsNil() {
 			object = reflect.MakeMap(v.Type())
