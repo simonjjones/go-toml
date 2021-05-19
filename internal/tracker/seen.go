@@ -30,8 +30,6 @@ func (k keyKind) String() string {
 	panic("missing keyKind string mapping")
 }
 
-var seenCalls uint64
-
 // SeenTracker tracks which keys have been seen with which TOML type to flag duplicates
 // and mismatches according to the spec.
 type SeenTracker struct {
@@ -40,30 +38,29 @@ type SeenTracker struct {
 }
 
 type info struct {
-	parent   *info
 	kind     keyKind
 	children map[string]*info
 	explicit bool
 }
 
-func (i *info) Clear() {
+func (i *info) clear() {
 	i.children = nil
 }
 
-func (i *info) Has(k string) (*info, bool) {
+func (i *info) has(k string) (*info, bool) {
 	c, ok := i.children[k]
 	return c, ok
 }
 
-func (i *info) SetKind(kind keyKind) {
+func (i *info) setKind(kind keyKind) {
 	i.kind = kind
 }
 
-func (i *info) CreateTable(k string, explicit bool) *info {
+func (i *info) createTable(k string, explicit bool) *info {
 	return i.createChild(k, tableKind, explicit)
 }
 
-func (i *info) CreateArrayTable(k string, explicit bool) *info {
+func (i *info) createArrayTable(k string, explicit bool) *info {
 	return i.createChild(k, arrayTableKind, explicit)
 }
 
@@ -73,7 +70,6 @@ func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
 	}
 
 	x := &info{
-		parent:   i,
 		kind:     kind,
 		explicit: explicit,
 	}
@@ -114,9 +110,9 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 		}
 
 		k := string(it.Node().Parsed)
-		child, found := s.current.Has(k)
+		child, found := s.current.has(k)
 		if !found {
-			child = s.current.CreateTable(k, false)
+			child = s.current.createTable(k, false)
 		}
 		s.current = child
 	}
@@ -124,7 +120,7 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 	// handle the last part of the key
 	k := string(it.Node().Parsed)
 
-	i, found := s.current.Has(k)
+	i, found := s.current.has(k)
 	if found {
 		if i.kind != tableKind {
 			return fmt.Errorf("toml: key %s should be a table, not a %s", k, i.kind)
@@ -135,7 +131,7 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 		i.explicit = true
 		s.current = i
 	} else {
-		s.current = s.current.CreateTable(k, true)
+		s.current = s.current.createTable(k, true)
 	}
 
 	return nil
@@ -153,9 +149,9 @@ func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 		}
 
 		k := string(it.Node().Parsed)
-		child, found := s.current.Has(k)
+		child, found := s.current.has(k)
 		if !found {
-			child = s.current.CreateTable(k, false)
+			child = s.current.createTable(k, false)
 		}
 		s.current = child
 	}
@@ -163,14 +159,14 @@ func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 	// handle the last part of the key
 	k := string(it.Node().Parsed)
 
-	info, found := s.current.Has(k)
+	info, found := s.current.has(k)
 	if found {
 		if info.kind != arrayTableKind {
 			return fmt.Errorf("toml: key %s already exists as a %s,  but should be an array table", info.kind, k)
 		}
-		info.Clear()
+		info.clear()
 	} else {
-		info = s.current.CreateArrayTable(k, true)
+		info = s.current.createArrayTable(k, true)
 	}
 
 	s.current = info
@@ -183,21 +179,21 @@ func (s *SeenTracker) checkKeyValue(context *info, node *ast.Node) error {
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
 		k := string(it.Node().Parsed)
-		child, found := context.Has(k)
+		child, found := context.has(k)
 		if found {
 			if child.kind != tableKind {
 				return fmt.Errorf("toml: expected %s to be a table, not a %s", k, child.kind)
 			}
 		} else {
-			child = context.CreateTable(k, false)
+			child = context.createTable(k, false)
 		}
 		context = child
 	}
 
 	if node.Value().Kind == ast.InlineTable {
-		context.SetKind(tableKind)
+		context.setKind(tableKind)
 	} else {
-		context.SetKind(valueKind)
+		context.setKind(valueKind)
 	}
 
 	return nil
