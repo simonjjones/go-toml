@@ -220,6 +220,11 @@ func (d *decoder) handleRootExpression(expr ast.Node, v reflect.Value) error {
 	var x reflect.Value
 	var err error
 
+	err = d.seen.CheckExpression(expr)
+	if err != nil {
+		return err
+	}
+
 	switch expr.Kind {
 	case ast.KeyValue:
 		if d.skipUntilTable {
@@ -270,6 +275,40 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 	last := !key.Node().Next().Valid()
 
 	switch v.Kind() {
+	case reflect.Interface:
+		if last {
+			elem := v.Elem()
+			if !elem.IsValid() {
+				elem = reflect.New(sliceInterfaceType).Elem()
+				elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
+			} else if elem.Kind() == reflect.Slice {
+				if elem.Type() != sliceInterfaceType {
+					elem = reflect.New(sliceInterfaceType).Elem()
+					elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
+				} else if !elem.CanSet() {
+					nelem := reflect.New(sliceInterfaceType).Elem()
+					nelem.Set(reflect.MakeSlice(sliceInterfaceType, elem.Len(), elem.Cap()))
+					reflect.Copy(nelem, elem)
+					elem = nelem
+				}
+			}
+			return d.handleArrayTableCollection(key, elem)
+		}
+	case reflect.Ptr:
+		elem := v.Elem()
+		if !elem.IsValid() {
+			ptr := reflect.New(v.Type().Elem())
+			v.Set(ptr)
+			elem = ptr.Elem()
+		}
+
+		elem, err := d.handleArrayTableCollection(key, elem)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		v.Elem().Set(elem)
+
+		return v, nil
 	case reflect.Slice:
 		if last {
 			elem := reflect.New(v.Type().Elem()).Elem()
@@ -372,7 +411,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 		return d.handleArrayTablePart(key, v)
 	default:
-		panic(fmt.Errorf("unhandled: %s", v.Kind()))
+		panic(fmt.Errorf("unhandled array table part: %s", v.Kind()))
 	}
 
 	return v, nil
@@ -485,7 +524,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 
 		return d.handleTablePart(key, v)
 	default:
-		panic(fmt.Errorf("unhandled: %s", v.Kind()))
+		panic(fmt.Errorf("unhandled table part: %s", v.Kind()))
 	}
 
 	return v, nil
@@ -576,6 +615,16 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 		if !elem.IsValid() {
 			elem = reflect.New(sliceInterfaceType).Elem()
 			elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
+		} else if elem.Kind() == reflect.Slice {
+			if elem.Type() != sliceInterfaceType {
+				elem = reflect.New(sliceInterfaceType).Elem()
+				elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
+			} else if !elem.CanSet() {
+				nelem := reflect.New(sliceInterfaceType).Elem()
+				nelem.Set(reflect.MakeSlice(sliceInterfaceType, elem.Len(), elem.Cap()))
+				reflect.Copy(nelem, elem)
+				elem = nelem
+			}
 		}
 		err := d.unmarshalArray(array, elem)
 		if err != nil {
@@ -901,6 +950,12 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		mv := v.MapIndex(mk)
 		if !mv.IsValid() {
 			mv = reflect.New(v.Type().Elem()).Elem()
+		} else {
+			last := !key.Node().Next().Valid()
+			if last {
+				var x interface{}
+				mv = reflect.ValueOf(&x).Elem()
+			}
 		}
 
 		mv, err := d.handleKeyValueInner(key, value, mv)
@@ -954,7 +1009,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 
 		return v, nil
 	default:
-		return reflect.Value{}, fmt.Errorf("unhandled: %s", v.Kind())
+		return reflect.Value{}, fmt.Errorf("unhandled kv part: %s", v.Kind())
 	}
 
 	return v, nil
