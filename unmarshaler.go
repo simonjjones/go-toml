@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pelletier/go-toml/v2/internal/ast"
 	"github.com/pelletier/go-toml/v2/internal/tracker"
@@ -522,6 +523,10 @@ func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
 		return d.unmarshalBool(value, v)
 	case ast.DateTime:
 		return d.unmarshalDateTime(value, v)
+	case ast.LocalDate:
+		return d.unmarshalLocalDate(value, v)
+	case ast.LocalDateTime:
+		return d.unmarshalLocalDateTime(value, v)
 	case ast.InlineTable:
 		return d.unmarshalInlineTable(value, v)
 	case ast.Array:
@@ -639,6 +644,50 @@ func (d *decoder) unmarshalDateTime(value ast.Node, v reflect.Value) error {
 	}
 
 	v.Set(reflect.ValueOf(dt))
+	return nil
+}
+
+func (d *decoder) unmarshalLocalDate(value ast.Node, v reflect.Value) error {
+	assertNode(ast.LocalDate, value)
+
+	ld, err := parseLocalDate(value.Data)
+	if err != nil {
+		return err
+	}
+
+	if v.Type() == timeType {
+		cast := ld.In(time.Local)
+
+		v.Set(reflect.ValueOf(cast))
+		return nil
+	}
+
+	v.Set(reflect.ValueOf(ld))
+
+	return nil
+}
+
+func (d *decoder) unmarshalLocalDateTime(value ast.Node, v reflect.Value) error {
+	assertNode(ast.LocalDateTime, value)
+
+	ldt, rest, err := parseLocalDateTime(value.Data)
+	if err != nil {
+		return err
+	}
+
+	if len(rest) > 0 {
+		return newDecodeError(rest, "extra characters at the end of a local date time")
+	}
+
+	if v.Type() == timeType {
+		cast := ldt.In(time.Local)
+
+		v.Set(reflect.ValueOf(cast))
+		return nil
+	}
+
+	v.Set(reflect.ValueOf(ldt))
+
 	return nil
 }
 
