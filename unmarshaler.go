@@ -222,18 +222,30 @@ func (d *decoder) handleRootExpression(expr ast.Node, v reflect.Value) error {
 
 	switch expr.Kind {
 	case ast.KeyValue:
-		x, err = d.handleKeyValue(expr.Key(), expr.Value(), v)
+		if d.skipUntilTable {
+			return nil
+		}
+		x, err = d.handleKeyValue(expr, v)
 	case ast.Table:
+		d.skipUntilTable = false
+		d.strict.EnterTable(expr)
 		x, err = d.handleTable(expr.Key(), v)
 	case ast.ArrayTable:
+		d.skipUntilTable = false
+		d.strict.EnterArrayTable(expr)
 		x, err = d.handleArrayTable(expr.Key(), v)
 	default:
 		panic(fmt.Errorf("parser should not permit expression of kind %s at document root", expr.Kind))
 	}
 
-	if err == nil {
+	if d.skipUntilTable {
+		if expr.Kind == ast.Table || expr.Kind == ast.ArrayTable {
+			d.strict.MissingTable(expr)
+		}
+	} else if err == nil {
 		v.Set(x)
 	}
+
 	return err
 }
 
@@ -270,6 +282,9 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 
 		elem := v.Index(v.Len() - 1)
 		x, err := d.handleArrayTable(key, elem)
+		if err != nil || d.skipUntilTable {
+			return reflect.Value{}, err
+		}
 		elem.Set(x)
 		return v, err
 	case reflect.Array:
@@ -280,9 +295,9 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 		elem := v.Index(idx)
 		_, err := d.handleArrayTable(key, elem)
 		return v, err
-	default:
-		panic(fmt.Errorf("should not happen: %s", v.Kind()))
 	}
+
+	return d.handleArrayTable(key, v)
 }
 
 // HandleArrayTablePart navigates the Go structure v using the key v. It is
@@ -335,12 +350,16 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil || !found {
+		if err != nil {
 			return reflect.Value{}, err
+		}
+		if !found {
+			d.skipUntilTable = true
+			return reflect.Value{}, nil
 		}
 
 		x, err := d.handleArrayTableCollection(key, f)
-		if err != nil {
+		if err != nil || d.skipUntilTable {
 			return reflect.Value{}, err
 		}
 		f.Set(x)
@@ -395,7 +414,7 @@ func (d *decoder) handleKeyValues(v reflect.Value) (reflect.Value, error) {
 			break
 		}
 
-		v, err = d.handleKeyValue(expr.Key(), expr.Value(), v)
+		v, err = d.handleKeyValue(expr, v)
 		if err != nil {
 			return v, err
 		}
@@ -441,8 +460,12 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil || !found {
+		if err != nil {
 			return reflect.Value{}, err
+		}
+		if !found {
+			d.skipUntilTable = true
+			return reflect.Value{}, nil
 		}
 
 		x, err := d.handleTable(key, f)
@@ -626,7 +649,7 @@ func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
 	for it.Next() {
 		n := it.Node()
 
-		v, err = d.handleKeyValue(n.Key(), n.Value(), v)
+		v, err = d.handleKeyValue(n, v)
 		if err != nil {
 			return err
 		}
@@ -829,7 +852,22 @@ func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
 	return err
 }
 
-func (d *decoder) handleKeyValue(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
+func (d *decoder) handleKeyValue(expr ast.Node, v reflect.Value) (reflect.Value, error) {
+	d.strict.EnterKeyValue(expr)
+
+	v, err := d.handleKeyValueInner(expr.Key(), expr.Value(), v)
+
+	if d.skipUntilTable {
+		d.strict.MissingField(expr)
+		d.skipUntilTable = false
+	}
+
+	d.strict.ExitKeyValue(expr)
+
+	return v, err
+}
+
+func (d *decoder) handleKeyValueInner(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
 	if key.Next() {
 		// Still scoping the key
 		return d.handleKeyValuePart(key, value, v)
@@ -865,7 +903,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 			mv = reflect.New(v.Type().Elem()).Elem()
 		}
 
-		mv, err := d.handleKeyValue(key, value, mv)
+		mv, err := d.handleKeyValueInner(key, value, mv)
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -873,11 +911,15 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil || !found {
+		if err != nil {
 			return reflect.Value{}, err
 		}
+		if !found {
+			d.skipUntilTable = true
+			return v, nil
+		}
 
-		x, err := d.handleKeyValue(key, value, f)
+		x, err := d.handleKeyValueInner(key, value, f)
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -912,7 +954,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 
 		return v, nil
 	default:
-		panic(fmt.Errorf("unhandled: %s", v.Kind()))
+		return reflect.Value{}, fmt.Errorf("unhandled: %s", v.Kind())
 	}
 
 	return v, nil
