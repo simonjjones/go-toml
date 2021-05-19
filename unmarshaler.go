@@ -266,6 +266,14 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 		x, err := d.handleArrayTable(key, elem)
 		elem.Set(x)
 		return v, err
+	case reflect.Array:
+		idx := d.arrayIndex(last, v)
+		if idx >= v.Len() {
+			return v, fmt.Errorf("toml: cannot decode array table into %s at position %d", v.Type(), idx)
+		}
+		elem := v.Index(idx)
+		_, err := d.handleArrayTable(key, elem)
+		return v, err
 	default:
 		panic(fmt.Errorf("should not happen: %s", v.Kind()))
 	}
@@ -500,6 +508,8 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 		} else {
 			v.SetLen(0)
 		}
+	case reflect.Array:
+		// arrays are always initialized
 	case reflect.Interface:
 		elem := v.Elem()
 		if !elem.IsValid() {
@@ -521,17 +531,31 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 	elemType := v.Type().Elem()
 
 	it := array.Children()
+	idx := 0
 	for it.Next() {
 		n := it.Node()
 
-		elem := reflect.New(elemType).Elem()
+		// TODO: optimize
+		if v.Kind() == reflect.Slice {
+			elem := reflect.New(elemType).Elem()
 
-		err := d.handleValue(n, elem)
-		if err != nil {
-			return err
+			err := d.handleValue(n, elem)
+			if err != nil {
+				return err
+			}
+
+			v.Set(reflect.Append(v, elem))
+		} else { // array
+			if idx >= v.Len() {
+				return nil
+			}
+			elem := v.Index(idx)
+			err := d.handleValue(n, elem)
+			if err != nil {
+				return err
+			}
+			idx++
 		}
-
-		v.Set(reflect.Append(v, elem))
 	}
 
 	return nil
