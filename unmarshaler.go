@@ -353,7 +353,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 	switch v.Kind() {
 	case reflect.Map:
 		// Create the key for the map element. For now assume it's a string.
-		mk := reflect.ValueOf(string(key.Node().Data))
+		mk := reflect.ValueOf(string(key.Node().Parsed))
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
@@ -388,7 +388,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
+		f, found, err := structField(v, string(key.Node().Parsed))
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -467,7 +467,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 	switch v.Kind() {
 	case reflect.Map:
 		// Create the key for the map element. For now assume it's a string.
-		mk := reflect.ValueOf(string(key.Node().Data))
+		mk := reflect.ValueOf(string(key.Node().Parsed))
 
 		// If the map does not exist, create it.
 		if v.IsNil() {
@@ -498,7 +498,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
+		f, found, err := structField(v, string(key.Node().Parsed))
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -541,8 +541,13 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 		return false, nil
 	}
 
+	data := node.Parsed
+	if data == nil {
+		data = node.Data
+	}
+
 	if v.Type().Implements(textUnmarshalerType) {
-		err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
+		err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText(data)
 		if err != nil {
 			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
 		}
@@ -551,7 +556,7 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 	}
 
 	if v.CanAddr() && v.Addr().Type().Implements(textUnmarshalerType) {
-		err := v.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
+		err := v.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText(data)
 		if err != nil {
 			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
 		}
@@ -891,9 +896,9 @@ func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
 
 	switch v.Kind() {
 	case reflect.String:
-		v.SetString(string(value.Data))
+		v.SetString(string(value.Parsed))
 	case reflect.Interface:
-		v.Set(reflect.ValueOf(string(value.Data)))
+		v.Set(reflect.ValueOf(string(value.Parsed)))
 	default:
 		err = fmt.Errorf("toml: cannot store TOML string into a Go %s", v.Kind())
 	}
@@ -931,7 +936,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
 	case reflect.Map:
-		mk := reflect.ValueOf(string(key.Node().Data))
+		mk := reflect.ValueOf(string(key.Node().Parsed))
 
 		keyType := v.Type().Key()
 		if !mk.Type().AssignableTo(keyType) {
@@ -965,7 +970,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
+		f, found, err := structField(v, string(key.Node().Parsed))
 		if err != nil {
 			return reflect.Value{}, err
 		}

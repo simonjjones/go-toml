@@ -26,7 +26,7 @@ func (t *KeyTracker) UpdateArrayTable(node ast.Node) {
 func (t *KeyTracker) Push(node ast.Node) {
 	it := node.Key()
 	for it.Next() {
-		t.k = append(t.k, string(it.Node().Data))
+		t.k = append(t.k, string(it.Node().Parsed))
 	}
 }
 

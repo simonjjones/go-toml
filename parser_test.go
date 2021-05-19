@@ -170,7 +170,11 @@ type (
 func compareNode(t *testing.T, e astNode, n ast.Node) {
 	t.Helper()
 	require.Equal(t, e.Kind, n.Kind)
-	require.Equal(t, e.Data, n.Data)
+	if n.Parsed != nil {
+		require.Equal(t, e.Data, n.Parsed)
+	} else {
+		require.Equal(t, e.Data, n.Data)
+	}
 
 	compareIterator(t, e.Children, n.Children())
 }

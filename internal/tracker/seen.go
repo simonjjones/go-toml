@@ -109,7 +109,7 @@ func (s *SeenTracker) checkTable(node ast.Node) error {
 			break
 		}
 
-		k := string(it.Node().Data)
+		k := string(it.Node().Parsed)
 		child, found := s.current.Has(k)
 		if !found {
 			child = s.current.CreateTable(k, false)
@@ -118,7 +118,7 @@ func (s *SeenTracker) checkTable(node ast.Node) error {
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Data)
+	k := string(it.Node().Parsed)
 
 	i, found := s.current.Has(k)
 	if found {
@@ -148,7 +148,7 @@ func (s *SeenTracker) checkArrayTable(node ast.Node) error {
 			break
 		}
 
-		k := string(it.Node().Data)
+		k := string(it.Node().Parsed)
 		child, found := s.current.Has(k)
 		if !found {
 			child = s.current.CreateTable(k, false)
@@ -157,7 +157,7 @@ func (s *SeenTracker) checkArrayTable(node ast.Node) error {
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Data)
+	k := string(it.Node().Parsed)
 
 	info, found := s.current.Has(k)
 	if found {
@@ -178,7 +178,7 @@ func (s *SeenTracker) checkKeyValue(context *info, node ast.Node) error {
 
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
-		k := string(it.Node().Data)
+		k := string(it.Node().Parsed)
 		child, found := context.Has(k)
 		if found {
 			if child.kind != tableKind {

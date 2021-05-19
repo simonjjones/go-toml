@@ -1591,7 +1591,6 @@ world'`,
 
 //nolint:funlen
 func TestLocalDateTime(t *testing.T) {
-
 	examples := []struct {
 		desc  string
 		input string

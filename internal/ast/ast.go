@@ -62,8 +62,9 @@ func (r *Root) at(idx int) Node {
 // represent (same as KeyValue, but without the last node being the value).
 // children []Node
 type Node struct {
-	Kind Kind
-	Data []byte // Raw bytes from the input
+	Kind   Kind
+	Data   []byte // Raw bytes from the input
+	Parsed []byte // For string and keys only. Does not reference the input.
 
 	// next idx (in the root array). 0 if last of the collection.
 	next int
