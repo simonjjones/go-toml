@@ -510,7 +510,7 @@ func (p *parser) parseMultilineBasicString(b []byte) ([]byte, []byte, []byte, er
 	// mlb-quotes = 1*2quotation-mark
 	// mlb-unescaped = wschar / %x21 / %x23-5B / %x5D-7E / non-ascii
 	// mlb-escaped-nl = escape ws newline *( wschar / newline )
-	token, rest, err := scanMultilineBasicString(b)
+	hasEscape, token, rest, err := scanMultilineBasicString(b)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -524,6 +524,10 @@ func (p *parser) parseMultilineBasicString(b []byte) ([]byte, []byte, []byte, er
 		i++
 	} else if token[i] == '\r' && token[i+1] == '\n' {
 		i += 2
+	}
+
+	if !hasEscape {
+		return token[i : len(token)-3], token, rest, err
 	}
 
 	// The scanner ensures that the token starts and ends with quotes and that
@@ -674,9 +678,13 @@ func (p *parser) parseBasicString(b []byte) ([]byte, []byte, []byte, error) {
 	// escape-seq-char =/ %x74         ; t    tab             U+0009
 	// escape-seq-char =/ %x75 4HEXDIG ; uXXXX                U+XXXX
 	// escape-seq-char =/ %x55 8HEXDIG ; UXXXXXXXX            U+XXXXXXXX
-	token, rest, err := scanBasicString(b)
+	hasEscape, token, rest, err := scanBasicString(b)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+
+	if !hasEscape {
+		return token[1 : len(token)-1], token, rest, err
 	}
 
 	var builder bytes.Buffer

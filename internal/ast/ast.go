@@ -51,12 +51,9 @@ func (r *Root) Iterator() Iterator {
 	return it
 }
 
-var nodeType = reflect.TypeOf(Node{})
-
 func (r *Root) at(idx int) *Node {
 	sh := (*reflect.SliceHeader)(unsafe.Pointer(&r.nodes))
 	return (*Node)(unsafe.Pointer(sh.Data + unsafe.Sizeof(Node{})*uintptr(idx)))
-	//return r.nodes[idx]
 }
 
 // Arrays have one child per element in the array.
