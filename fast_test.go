@@ -61,9 +61,9 @@ func TestFastExistingMap(t *testing.T) {
 	strings.yo = "hello"`), &m)
 	require.NoError(t, err)
 	require.Equal(t, map[string]interface{}{
-		"ints": map[string]int{
-			"one": 1,
-			"two": 2,
+		"ints": map[string]interface{}{
+			"one": int64(1),
+			"two": int64(2),
 		},
 		"strings": map[string]interface{}{
 			"yo": "hello",

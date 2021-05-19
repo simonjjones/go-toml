@@ -1256,7 +1256,6 @@ type Config484 struct {
 }
 
 func TestIssue484(t *testing.T) {
-
 	raw := []byte(`integers = ["1","2","3","100"]`)
 
 	var cfg Config484
