@@ -167,7 +167,7 @@ type (
 	}
 )
 
-func compareNode(t *testing.T, e astNode, n ast.Node) {
+func compareNode(t *testing.T, e astNode, n *ast.Node) {
 	t.Helper()
 	require.Equal(t, e.Kind, n.Kind)
 	if n.Parsed != nil {

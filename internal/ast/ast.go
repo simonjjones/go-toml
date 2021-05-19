@@ -2,6 +2,8 @@ package ast
 
 import (
 	"fmt"
+	"reflect"
+	"unsafe"
 )
 
 // Iterator starts uninitialized, you need to call Next() first.
@@ -14,7 +16,7 @@ import (
 // }
 type Iterator struct {
 	started bool
-	node    Node
+	node    *Node
 }
 
 // Next moves the iterator forward and returns true if points to a node, false
@@ -29,7 +31,7 @@ func (c *Iterator) Next() bool {
 }
 
 // Node returns a copy of the node pointed at by the iterator.
-func (c *Iterator) Node() Node {
+func (c *Iterator) Node() *Node {
 	return c.node
 }
 
@@ -44,14 +46,17 @@ type Root struct {
 func (r *Root) Iterator() Iterator {
 	it := Iterator{}
 	if len(r.nodes) > 0 {
-		it.node = r.nodes[0]
+		it.node = r.at(0)
 	}
 	return it
 }
 
-func (r *Root) at(idx int) Node {
-	// TODO: unsafe to point to the node directly
-	return r.nodes[idx]
+var nodeType = reflect.TypeOf(Node{})
+
+func (r *Root) at(idx int) *Node {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&r.nodes))
+	return (*Node)(unsafe.Pointer(sh.Data + unsafe.Sizeof(Node{})*uintptr(idx)))
+	//return r.nodes[idx]
 }
 
 // Arrays have one child per element in the array.
@@ -76,29 +81,27 @@ type Node struct {
 
 // Next returns a copy of the next node, or an invalid Node if there is no
 // next node.
-func (n Node) Next() Node {
+func (n *Node) Next() *Node {
 	if n.next <= 0 {
-		return noNode
+		return nil
 	}
 	return n.root.at(n.next)
 }
 
-// Child returns a copy of the first child node of this node. Other children
+// Child returns a ptr to the first child node of this node. Other children
 // can be accessed calling Next on the first child.
 // Returns an invalid Node if there is none.
-func (n Node) Child() Node {
+func (n Node) Child() *Node {
 	if n.child <= 0 {
-		return noNode
+		return nil
 	}
 	return n.root.at(n.child)
 }
 
 // Valid returns true if the node's kind is set (not to Invalid).
-func (n Node) Valid() bool {
-	return n.Kind != Invalid
+func (n *Node) Valid() bool {
+	return n != nil && n.Kind != Invalid
 }
-
-var noNode = Node{}
 
 // Key returns the child nodes making the Key on a supported node. Panics
 // otherwise.
@@ -122,13 +125,12 @@ func (n *Node) Key() Iterator {
 // Value returns a pointer to the value node of a KeyValue.
 // Guaranteed to be non-nil.
 // Panics if not called on a KeyValue node, or if the Children are malformed.
-func (n Node) Value() Node {
-	assertKind(KeyValue, n)
+func (n *Node) Value() *Node {
 	return n.Child()
 }
 
 // Children returns an iterator over a node's children.
-func (n Node) Children() Iterator {
+func (n *Node) Children() Iterator {
 	return Iterator{node: n.Child()}
 }
 

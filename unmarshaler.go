@@ -136,7 +136,7 @@ type decoder struct {
 	root reflect.Value
 }
 
-func (d *decoder) expr() ast.Node {
+func (d *decoder) expr() *ast.Node {
 	return d.p.Expression()
 }
 
@@ -213,7 +213,7 @@ Rules for the unmarshal code:
 - An "object" is either a struct or a map.
 */
 
-func (d *decoder) handleRootExpression(expr ast.Node, v reflect.Value) error {
+func (d *decoder) handleRootExpression(expr *ast.Node, v reflect.Value) error {
 	if !expr.Valid() {
 		panic("should only be called with a valid expression")
 	}
@@ -531,7 +531,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 	return v, nil
 }
 
-func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
+func tryTextUnmarshaler(node *ast.Node, v reflect.Value) (bool, error) {
 	if v.Kind() != reflect.Struct {
 		return false, nil
 	}
@@ -568,7 +568,7 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 	return false, nil
 }
 
-func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
+func (d *decoder) handleValue(value *ast.Node, v reflect.Value) error {
 	for v.Kind() == reflect.Ptr {
 		v = initAndDereferencePointer(v)
 	}
@@ -602,7 +602,7 @@ func (d *decoder) handleValue(value ast.Node, v reflect.Value) error {
 	}
 }
 
-func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalArray(array *ast.Node, v reflect.Value) error {
 	switch v.Kind() {
 	case reflect.Slice:
 		if v.IsNil() {
@@ -679,7 +679,7 @@ func (d *decoder) unmarshalArray(array ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalInlineTable(itable *ast.Node, v reflect.Value) error {
 	// Make sure v is an initialized object.
 	switch v.Kind() {
 	case reflect.Map:
@@ -713,7 +713,7 @@ func (d *decoder) unmarshalInlineTable(itable ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalDateTime(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalDateTime(value *ast.Node, v reflect.Value) error {
 	dt, err := parseDateTime(value.Data)
 	if err != nil {
 		return err
@@ -723,7 +723,7 @@ func (d *decoder) unmarshalDateTime(value ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalLocalDate(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalLocalDate(value *ast.Node, v reflect.Value) error {
 	ld, err := parseLocalDate(value.Data)
 	if err != nil {
 		return err
@@ -741,7 +741,7 @@ func (d *decoder) unmarshalLocalDate(value ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalLocalDateTime(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalLocalDateTime(value *ast.Node, v reflect.Value) error {
 	ldt, rest, err := parseLocalDateTime(value.Data)
 	if err != nil {
 		return err
@@ -763,7 +763,7 @@ func (d *decoder) unmarshalLocalDateTime(value ast.Node, v reflect.Value) error 
 	return nil
 }
 
-func (d *decoder) unmarshalBool(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalBool(value *ast.Node, v reflect.Value) error {
 	b := value.Data[0] == 't'
 
 	switch v.Kind() {
@@ -778,7 +778,7 @@ func (d *decoder) unmarshalBool(value ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalFloat(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalFloat(value *ast.Node, v reflect.Value) error {
 	f, err := parseFloat(value.Data)
 	if err != nil {
 		return err
@@ -801,7 +801,7 @@ func (d *decoder) unmarshalFloat(value ast.Node, v reflect.Value) error {
 	return nil
 }
 
-func (d *decoder) unmarshalInteger(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalInteger(value *ast.Node, v reflect.Value) error {
 	const (
 		maxInt = int64(^uint(0) >> 1)
 		minInt = -maxInt - 1
@@ -879,7 +879,7 @@ func (d *decoder) unmarshalInteger(value ast.Node, v reflect.Value) error {
 	return err
 }
 
-func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
+func (d *decoder) unmarshalString(value *ast.Node, v reflect.Value) error {
 	var err error
 
 	switch v.Kind() {
@@ -894,7 +894,7 @@ func (d *decoder) unmarshalString(value ast.Node, v reflect.Value) error {
 	return err
 }
 
-func (d *decoder) handleKeyValue(expr ast.Node, v reflect.Value) (reflect.Value, error) {
+func (d *decoder) handleKeyValue(expr *ast.Node, v reflect.Value) (reflect.Value, error) {
 	d.strict.EnterKeyValue(expr)
 
 	v, err := d.handleKeyValueInner(expr.Key(), expr.Value(), v)
@@ -909,7 +909,7 @@ func (d *decoder) handleKeyValue(expr ast.Node, v reflect.Value) (reflect.Value,
 	return v, err
 }
 
-func (d *decoder) handleKeyValueInner(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
+func (d *decoder) handleKeyValueInner(key ast.Iterator, value *ast.Node, v reflect.Value) (reflect.Value, error) {
 	if key.Next() {
 		// Still scoping the key
 		return d.handleKeyValuePart(key, value, v)
@@ -919,7 +919,7 @@ func (d *decoder) handleKeyValueInner(key ast.Iterator, value ast.Node, v reflec
 	return v, d.handleValue(value, v)
 }
 
-func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect.Value) (reflect.Value, error) {
+func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflect.Value) (reflect.Value, error) {
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
 	switch v.Kind() {

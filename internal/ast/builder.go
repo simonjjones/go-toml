@@ -18,7 +18,7 @@ func (b *Builder) Tree() *Root {
 	return &b.tree
 }
 
-func (b *Builder) NodeAt(ref Reference) Node {
+func (b *Builder) NodeAt(ref Reference) *Node {
 	return b.tree.at(ref.idx)
 }
 

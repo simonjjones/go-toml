@@ -83,7 +83,7 @@ func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
 
 // CheckExpression takes a top-level node and checks that it does not contain keys
 // that have been seen in previous calls, and validates that types are consistent.
-func (s *SeenTracker) CheckExpression(node ast.Node) error {
+func (s *SeenTracker) CheckExpression(node *ast.Node) error {
 	benchmetrics.IncCounter(benchmetrics.CheckExpression)
 	if s.root == nil {
 		s.root = &info{
@@ -103,7 +103,7 @@ func (s *SeenTracker) CheckExpression(node ast.Node) error {
 	}
 
 }
-func (s *SeenTracker) checkTable(node ast.Node) error {
+func (s *SeenTracker) checkTable(node *ast.Node) error {
 	s.current = s.root
 
 	it := node.Key()
@@ -141,7 +141,7 @@ func (s *SeenTracker) checkTable(node ast.Node) error {
 	return nil
 }
 
-func (s *SeenTracker) checkArrayTable(node ast.Node) error {
+func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 	s.current = s.root
 
 	it := node.Key()
@@ -177,7 +177,7 @@ func (s *SeenTracker) checkArrayTable(node ast.Node) error {
 	return nil
 }
 
-func (s *SeenTracker) checkKeyValue(context *info, node ast.Node) error {
+func (s *SeenTracker) checkKeyValue(context *info, node *ast.Node) error {
 	it := node.Key()
 
 	// handle the first parts of the key, excluding the last one
