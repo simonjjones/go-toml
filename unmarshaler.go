@@ -131,9 +131,6 @@ type decoder struct {
 
 	// Strict mode
 	strict strict
-
-	// TODO: remove me, for debug
-	root reflect.Value
 }
 
 func (d *decoder) expr() ast.Node {
@@ -193,7 +190,6 @@ func (d *decoder) FromParser(v interface{}) error {
 }
 
 func (d *decoder) fromParser(root reflect.Value) error {
-	d.root = root
 	for d.nextExpr() {
 		err := d.handleRootExpression(d.expr(), root)
 		if err != nil {
