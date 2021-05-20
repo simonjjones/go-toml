@@ -269,10 +269,10 @@ func makeInterfaceValue(last bool) reflect.Value {
 }
 
 func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
-	last := !key.Node().Next().Valid()
-
 	switch v.Kind() {
 	case reflect.Interface:
+		last := !key.Node().Next().Valid()
+
 		if last {
 			elem := v.Elem()
 			if !elem.IsValid() {
@@ -307,6 +307,8 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 
 		return v, nil
 	case reflect.Slice:
+		last := !key.Node().Next().Valid()
+
 		if last {
 			elem := reflect.New(v.Type().Elem()).Elem()
 			elem, err := d.handleArrayTable(key, elem)
@@ -324,6 +326,8 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 		elem.Set(x)
 		return v, err
 	case reflect.Array:
+		last := !key.Node().Next().Valid()
+
 		idx := d.arrayIndex(last, v)
 		if idx >= v.Len() {
 			return v, fmt.Errorf("toml: cannot decode array table into %s at position %d", v.Type(), idx)
@@ -343,7 +347,14 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 // TODO: this function is basically a copy-paste from handleArrayPart.
 //   Find a way to refactor.
 func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
-	last := !key.Node().Next().Valid()
+
+	for v.Kind() == reflect.Interface {
+		if v.Elem().IsValid() {
+			v = v.Elem()
+		} else {
+			v = reflect.MakeMap(mapStringInterfaceType)
+		}
+	}
 
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
@@ -367,6 +378,8 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 			t := v.Type().Elem()
 			if t.Kind() == reflect.Interface {
+				last := !key.Node().Next().Valid()
+
 				mv = makeInterfaceValue(last)
 			} else {
 				mv = reflect.New(v.Type().Elem()).Elem()
@@ -374,6 +387,8 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		} else if mv.Kind() == reflect.Interface {
 			mv = mv.Elem()
 			if !mv.IsValid() {
+				last := !key.Node().Next().Valid()
+
 				mv = makeInterfaceValue(last)
 			}
 		}
@@ -400,13 +415,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		}
 		f.Set(x)
 	case reflect.Interface:
-		if v.Elem().IsValid() {
-			v = v.Elem()
-		} else {
-			v = reflect.MakeMap(mapStringInterfaceType)
-		}
-
-		return d.handleArrayTablePart(key, v)
+		panic("should be handled")
 	default:
 		panic(fmt.Errorf("unhandled array table part: %s", v.Kind()))
 	}
