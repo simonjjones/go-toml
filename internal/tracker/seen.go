@@ -116,7 +116,7 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 			break
 		}
 
-		k := string(it.Node().Parsed)
+		k := it.Node().ParsedUnsafeString()
 		child, found := s.current.has(k)
 		if !found {
 			child = s.current.createTable(k, false)
@@ -125,7 +125,7 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Parsed)
+	k := it.Node().ParsedUnsafeString()
 
 	i, found := s.current.has(k)
 	if found {
@@ -155,7 +155,7 @@ func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 			break
 		}
 
-		k := string(it.Node().Parsed)
+		k := it.Node().ParsedUnsafeString()
 		child, found := s.current.has(k)
 		if !found {
 			child = s.current.createTable(k, false)
@@ -164,7 +164,7 @@ func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Parsed)
+	k := it.Node().ParsedUnsafeString()
 
 	info, found := s.current.has(k)
 	if found {

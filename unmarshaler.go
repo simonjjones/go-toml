@@ -351,7 +351,6 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 // TODO: this function is basically a copy-paste from handleArrayPart.
 //   Find a way to refactor.
 func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
-
 	for v.Kind() == reflect.Interface {
 		if v.Elem().IsValid() {
 			v = v.Elem()
