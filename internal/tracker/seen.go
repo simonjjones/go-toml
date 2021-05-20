@@ -38,8 +38,9 @@ type SeenTracker struct {
 }
 
 type info struct {
+	name     string
 	kind     keyKind
-	children map[string]*info
+	children []*info
 	explicit bool
 }
 
@@ -48,8 +49,12 @@ func (i *info) clear() {
 }
 
 func (i *info) has(k string) (*info, bool) {
-	c, ok := i.children[k]
-	return c, ok
+	for _, c := range i.children {
+		if c.name == k {
+			return c, true
+		}
+	}
+	return nil, false
 }
 
 func (i *info) setKind(kind keyKind) {
@@ -66,14 +71,15 @@ func (i *info) createArrayTable(k string, explicit bool) *info {
 
 func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
 	if i.children == nil {
-		i.children = make(map[string]*info, 1)
+		i.children = make([]*info, 0, 8)
 	}
 
 	x := &info{
+		name:     k,
 		kind:     kind,
 		explicit: explicit,
 	}
-	i.children[k] = x
+	i.children = append(i.children, x)
 	return x
 }
 
