@@ -106,7 +106,6 @@ func (d *Decoder) Decode(v interface{}) error {
 
 type decoder struct {
 	// Which parser instance in use for this decoding session.
-	// TODO: Think about removing later.
 	p *parser
 
 	// Flag indicating that the current expression is stashed.
@@ -406,7 +405,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 			v.SetMapIndex(mk, mv)
 		}
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Parsed))
+		f, found, err := structField(v, key.Node().ParsedUnsafeString())
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -517,7 +516,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 			v.SetMapIndex(mk, mv)
 		}
 	case reflect.Struct:
-		f, found, err := structField(v, key.Node().ParsedString())
+		f, found, err := structField(v, key.Node().ParsedUnsafeString())
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -1005,7 +1004,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 			v.SetMapIndex(mk, mv)
 		}
 	case reflect.Struct:
-		f, found, err := structField(v, key.Node().ParsedString())
+		f, found, err := structField(v, key.Node().ParsedUnsafeString())
 		if err != nil {
 			return reflect.Value{}, err
 		}
