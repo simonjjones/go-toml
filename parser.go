@@ -139,9 +139,7 @@ func (p *parser) parseArrayTable(b []byte) (ast.Reference, []byte, error) {
 	// array-table = array-table-open key array-table-close
 	// array-table-open  = %x5B.5B ws  ; [[ Double left square bracket
 	// array-table-close = ws %x5D.5D  ; ]] Double right square bracket
-	ref := p.builder.Push(ast.Node{
-		Kind: ast.ArrayTable,
-	})
+	ref := p.builder.Push(ast.ArrayTable, nil, nil)
 
 	b = b[2:]
 	b = p.parseWhitespace(b)
@@ -168,9 +166,7 @@ func (p *parser) parseStdTable(b []byte) (ast.Reference, []byte, error) {
 	// std-table = std-table-open key std-table-close
 	// std-table-open  = %x5B ws     ; [ Left square bracket
 	// std-table-close = ws %x5D     ; ] Right square bracket
-	ref := p.builder.Push(ast.Node{
-		Kind: ast.Table,
-	})
+	ref := p.builder.Push(ast.Table, nil, nil)
 
 	b = b[1:]
 	b = p.parseWhitespace(b)
@@ -191,9 +187,7 @@ func (p *parser) parseStdTable(b []byte) (ast.Reference, []byte, error) {
 
 func (p *parser) parseKeyval(b []byte) (ast.Reference, []byte, error) {
 	// keyval = key keyval-sep val
-	ref := p.builder.Push(ast.Node{
-		Kind: ast.KeyValue,
-	})
+	ref := p.builder.Push(ast.KeyValue, nil, nil)
 
 	key, b, err := p.parseKey(b)
 	if err != nil {
@@ -249,11 +243,7 @@ func (p *parser) parseVal(b []byte) (ast.Reference, []byte, error) {
 		}
 
 		if err == nil {
-			ref = p.builder.Push(ast.Node{
-				Kind:   ast.String,
-				Data:   original,
-				Parsed: parsed,
-			})
+			ref = p.builder.Push(ast.String, original, parsed)
 		}
 
 		return ref, b, err
@@ -267,11 +257,7 @@ func (p *parser) parseVal(b []byte) (ast.Reference, []byte, error) {
 		}
 
 		if err == nil {
-			ref = p.builder.Push(ast.Node{
-				Kind:   ast.String,
-				Data:   original,
-				Parsed: v,
-			})
+			ref = p.builder.Push(ast.String, original, v)
 		}
 
 		return ref, b, err
@@ -280,10 +266,7 @@ func (p *parser) parseVal(b []byte) (ast.Reference, []byte, error) {
 			return ref, nil, newDecodeError(atmost(b, 4), "expected 'true'")
 		}
 
-		ref = p.builder.Push(ast.Node{
-			Kind: ast.Bool,
-			Data: b[:4],
-		})
+		ref = p.builder.Push(ast.Bool, b[:4], nil)
 
 		return ref, b[4:], nil
 	case 'f':
@@ -291,10 +274,7 @@ func (p *parser) parseVal(b []byte) (ast.Reference, []byte, error) {
 			return ref, nil, newDecodeError(atmost(b, 5), "expected 'false'")
 		}
 
-		ref = p.builder.Push(ast.Node{
-			Kind: ast.Bool,
-			Data: b[:5],
-		})
+		ref = p.builder.Push(ast.Bool, b[:5], nil)
 
 		return ref, b[5:], nil
 	case '[':
@@ -329,9 +309,7 @@ func (p *parser) parseInlineTable(b []byte) (ast.Reference, []byte, error) {
 	// inline-table-close = ws %x7D     ; }
 	// inline-table-sep   = ws %x2C ws  ; , Comma
 	// inline-table-keyvals = keyval [ inline-table-sep inline-table-keyvals ]
-	parent := p.builder.Push(ast.Node{
-		Kind: ast.InlineTable,
-	})
+	parent := p.builder.Push(ast.InlineTable, nil, nil)
 
 	first := true
 
@@ -388,9 +366,7 @@ func (p *parser) parseValArray(b []byte) (ast.Reference, []byte, error) {
 	// ws-comment-newline = *( wschar / [ comment ] newline )
 	b = b[1:]
 
-	parent := p.builder.Push(ast.Node{
-		Kind: ast.Array,
-	})
+	parent := p.builder.Push(ast.Array, nil, nil)
 
 	first := true
 
@@ -612,11 +588,7 @@ func (p *parser) parseKey(b []byte) (ast.Reference, []byte, error) {
 		return ast.Reference{}, nil, err
 	}
 
-	ref := p.builder.Push(ast.Node{
-		Kind:   ast.Key,
-		Data:   original,
-		Parsed: key,
-	})
+	ref := p.builder.Push(ast.Key, original, key)
 
 	for {
 		b = p.parseWhitespace(b)
@@ -628,11 +600,7 @@ func (p *parser) parseKey(b []byte) (ast.Reference, []byte, error) {
 				return ref, nil, err
 			}
 
-			p.builder.PushAndChain(ast.Node{
-				Kind:   ast.Key,
-				Parsed: key,
-				Data:   original,
-			})
+			p.builder.PushAndChain(ast.Key, key, original)
 		} else {
 			break
 		}
@@ -770,19 +738,13 @@ func (p *parser) parseIntOrFloatOrDateTime(b []byte) (ast.Reference, []byte, err
 			return ast.Reference{}, nil, newDecodeError(atmost(b, 3), "expected 'inf'")
 		}
 
-		return p.builder.Push(ast.Node{
-			Kind: ast.Float,
-			Data: b[:3],
-		}), b[3:], nil
+		return p.builder.Push(ast.Float, b[:3], nil), b[3:], nil
 	case 'n':
 		if !scanFollowsNan(b) {
 			return ast.Reference{}, nil, newDecodeError(atmost(b, 3), "expected 'nan'")
 		}
 
-		return p.builder.Push(ast.Node{
-			Kind: ast.Float,
-			Data: b[:3],
-		}), b[3:], nil
+		return p.builder.Push(ast.Float, b[:3], nil), b[3:], nil
 	case '+', '-':
 		return p.scanIntOrFloat(b)
 	}
@@ -870,10 +832,7 @@ byteLoop:
 		kind = ast.LocalDate
 	}
 
-	return p.builder.Push(ast.Node{
-		Kind: kind,
-		Data: b[:i],
-	}), b[i:], nil
+	return p.builder.Push(kind, b[:i], nil), b[i:], nil
 }
 
 //nolint:funlen,gocognit,cyclop
@@ -903,10 +862,7 @@ func (p *parser) scanIntOrFloat(b []byte) (ast.Reference, []byte, error) {
 			}
 		}
 
-		return p.builder.Push(ast.Node{
-			Kind: ast.Integer,
-			Data: b[:i],
-		}), b[i:], nil
+		return p.builder.Push(ast.Integer, b[:i], nil), b[i:], nil
 	}
 
 	isFloat := false
@@ -926,10 +882,7 @@ func (p *parser) scanIntOrFloat(b []byte) (ast.Reference, []byte, error) {
 
 		if c == 'i' {
 			if scanFollowsInf(b[i:]) {
-				return p.builder.Push(ast.Node{
-					Kind: ast.Float,
-					Data: b[:i+3],
-				}), b[i+3:], nil
+				return p.builder.Push(ast.Float, b[:i+3], nil), b[i+3:], nil
 			}
 
 			return ast.Reference{}, nil, newDecodeError(b[i:i+1], "unexpected character 'i' while scanning for a number")
@@ -937,10 +890,7 @@ func (p *parser) scanIntOrFloat(b []byte) (ast.Reference, []byte, error) {
 
 		if c == 'n' {
 			if scanFollowsNan(b[i:]) {
-				return p.builder.Push(ast.Node{
-					Kind: ast.Float,
-					Data: b[:i+3],
-				}), b[i+3:], nil
+				return p.builder.Push(ast.Float, b[:i+3], nil), b[i+3:], nil
 			}
 
 			return ast.Reference{}, nil, newDecodeError(b[i:i+1], "unexpected character 'n' while scanning for a number")
@@ -959,10 +909,7 @@ func (p *parser) scanIntOrFloat(b []byte) (ast.Reference, []byte, error) {
 		kind = ast.Float
 	}
 
-	return p.builder.Push(ast.Node{
-		Kind: kind,
-		Data: b[:i],
-	}), b[i:], nil
+	return p.builder.Push(kind, b[:i], nil), b[i:], nil
 }
 
 func isDigit(r byte) bool {

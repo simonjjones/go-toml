@@ -31,20 +31,36 @@ func (b *Builder) Reset() {
 	b.lastIdx = 0
 }
 
-func (b *Builder) Push(n Node) Reference {
-	n.root = &b.tree
+func (b *Builder) Push(k Kind, data []byte, parsed []byte) Reference {
 	b.lastIdx = len(b.tree.nodes)
-	b.tree.nodes = append(b.tree.nodes, n)
+
+	n := b.tree.new()
+	n.Kind = k
+	n.Data = data
+	n.Parsed = parsed
+
+	n.child = 0
+	n.next = 0
+	n.root = &b.tree
+
 	return Reference{
 		idx: b.lastIdx,
 		set: true,
 	}
 }
 
-func (b *Builder) PushAndChain(n Node) Reference {
-	n.root = &b.tree
+func (b *Builder) PushAndChain(k Kind, data []byte, parsed []byte) Reference {
 	newIdx := len(b.tree.nodes)
-	b.tree.nodes = append(b.tree.nodes, n)
+
+	n := b.tree.new()
+	n.Kind = k
+	n.Data = data
+	n.Parsed = parsed
+
+	n.child = 0
+	n.next = 0
+	n.root = &b.tree
+
 	if b.lastIdx >= 0 {
 		b.tree.nodes[b.lastIdx].next = newIdx
 	}

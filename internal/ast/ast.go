@@ -56,6 +56,18 @@ func (r *Root) at(idx int) *Node {
 	return (*Node)(unsafe.Pointer(sh.Data + unsafe.Sizeof(Node{})*uintptr(idx)))
 }
 
+func (r *Root) new() *Node {
+	if cap(r.nodes)-len(r.nodes) == 0 {
+		old := r.nodes
+		r.nodes = make([]Node, len(r.nodes), cap(r.nodes)*2)
+		copy(r.nodes, old)
+	}
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&r.nodes))
+	idx := sh.Len
+	sh.Len++
+	return (*Node)(unsafe.Pointer(sh.Data + unsafe.Sizeof(Node{})*uintptr(idx)))
+}
+
 // Arrays have one child per element in the array.
 // InlineTables have one child per key-value pair in the table.
 // KeyValues have at least two children. The first one is the value. The
