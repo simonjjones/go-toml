@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pelletier/go-toml/v2/benchmetrics"
 	"github.com/pelletier/go-toml/v2/internal/ast"
 	"github.com/pelletier/go-toml/v2/internal/tracker"
 )
@@ -245,7 +244,9 @@ func (d *decoder) handleRootExpression(expr *ast.Node, v reflect.Value) error {
 			d.strict.MissingTable(expr)
 		}
 	} else if err == nil {
-		v.Set(x)
+		if v != x {
+			v.Set(x)
+		}
 	}
 
 	return err
@@ -323,7 +324,10 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 		if err != nil || d.skipUntilTable {
 			return reflect.Value{}, err
 		}
-		elem.Set(x)
+
+		if x != elem {
+			elem.Set(x)
+		}
 		return v, err
 	case reflect.Array:
 		last := !key.Node().Next().Valid()
@@ -369,6 +373,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		}
 
 		mv := v.MapIndex(mk)
+		origMv := mv
 
 		if !mv.IsValid() {
 			// If there is no value in the map, create a new one according to
@@ -398,7 +403,9 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 			return mv, err
 		}
 
-		v.SetMapIndex(mk, mv)
+		if mv != origMv {
+			v.SetMapIndex(mk, mv)
+		}
 	case reflect.Struct:
 		f, found, err := structField(v, string(key.Node().Parsed))
 		if err != nil {
@@ -413,7 +420,9 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 		if err != nil || d.skipUntilTable {
 			return reflect.Value{}, err
 		}
-		f.Set(x)
+		if x != f {
+			f.Set(x)
+		}
 	case reflect.Interface:
 		panic("should be handled")
 	default:
@@ -432,7 +441,9 @@ func (d *decoder) handleTable(key ast.Iterator, v reflect.Value) (reflect.Value,
 		if err != nil {
 			return reflect.Value{}, err
 		}
-		elem.Set(x)
+		if elem != x {
+			elem.Set(x)
+		}
 		return v, nil
 	}
 	if key.Next() {
@@ -481,6 +492,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 		}
 
 		mv := v.MapIndex(mk)
+		origMv := mv
 		if !mv.IsValid() {
 			t := v.Type().Elem()
 			if t.Kind() == reflect.Interface {
@@ -502,7 +514,9 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 			return reflect.Value{}, err
 		}
 
-		v.SetMapIndex(mk, mv)
+		if mv != origMv {
+			v.SetMapIndex(mk, mv)
+		}
 	case reflect.Struct:
 		f, found, err := structField(v, key.Node().ParsedString())
 		if err != nil {
@@ -518,8 +532,9 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 			return reflect.Value{}, err
 		}
 
-		f.Set(x)
-
+		if x != f {
+			f.Set(x)
+		}
 		return v, nil
 	case reflect.Interface:
 		if v.Elem().IsValid() {
@@ -619,8 +634,8 @@ func (d *decoder) unmarshalArray(array *ast.Node, v reflect.Value) error {
 		// arrays are always initialized
 	case reflect.Interface:
 		elem := v.Elem()
+		origElem := elem
 		if !elem.IsValid() {
-			benchmetrics.IncCounter(benchmetrics.SliceNotValid)
 			elem = reflect.New(sliceInterfaceType).Elem()
 			elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
 		} else if elem.Kind() == reflect.Slice {
@@ -628,7 +643,6 @@ func (d *decoder) unmarshalArray(array *ast.Node, v reflect.Value) error {
 				elem = reflect.New(sliceInterfaceType).Elem()
 				elem.Set(reflect.MakeSlice(sliceInterfaceType, 0, 16))
 			} else if !elem.CanSet() {
-				benchmetrics.IncCounter(benchmetrics.SliceNotSet)
 				nelem := reflect.New(sliceInterfaceType).Elem()
 				nelem.Set(reflect.MakeSlice(sliceInterfaceType, elem.Len(), elem.Cap()))
 				reflect.Copy(nelem, elem)
@@ -639,7 +653,10 @@ func (d *decoder) unmarshalArray(array *ast.Node, v reflect.Value) error {
 		if err != nil {
 			return err
 		}
-		v.Set(elem)
+
+		if elem != origElem {
+			v.Set(elem)
+		}
 		return nil
 	default:
 		// TODO: use newDecodeError, but first the parser needs to fill
@@ -969,6 +986,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 		}
 
 		mv := v.MapIndex(mk)
+		origMv := mv
 		if !mv.IsValid() {
 			mv = reflect.New(v.Type().Elem()).Elem()
 		} else {
@@ -984,7 +1002,9 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 			return reflect.Value{}, err
 		}
 
-		v.SetMapIndex(mk, mv)
+		if mv != origMv {
+			v.SetMapIndex(mk, mv)
+		}
 	case reflect.Struct:
 		f, found, err := structField(v, key.Node().ParsedString())
 		if err != nil {
@@ -1000,8 +1020,9 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 			return reflect.Value{}, err
 		}
 
-		f.Set(x)
-
+		if x != f {
+			f.Set(x)
+		}
 		return v, err
 	case reflect.Interface:
 		v = v.Elem()
