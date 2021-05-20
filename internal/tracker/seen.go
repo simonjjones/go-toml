@@ -185,7 +185,7 @@ func (s *SeenTracker) checkKeyValue(context *info, node *ast.Node) error {
 
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
-		k := it.Node().ParsedString()
+		k := it.Node().ParsedUnsafeString()
 		child, found := context.has(k)
 		if found {
 			if child.kind != tableKind {

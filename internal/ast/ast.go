@@ -76,8 +76,12 @@ type Node struct {
 	root *Root
 }
 
-func (n *Node) ParsedString() string {
+func (n *Node) ParsedUnsafeString() string {
 	return *(*string)(unsafe.Pointer(&n.Parsed))
+}
+
+func (n *Node) ParsedString() string {
+	return string(n.Parsed)
 }
 
 // Next returns a copy of the next node, or an invalid Node if there is no
