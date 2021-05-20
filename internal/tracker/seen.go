@@ -2,6 +2,8 @@ package tracker
 
 import (
 	"fmt"
+	"reflect"
+	"unsafe"
 
 	"github.com/pelletier/go-toml/v2/benchmetrics"
 	"github.com/pelletier/go-toml/v2/internal/ast"
@@ -40,7 +42,7 @@ type SeenTracker struct {
 type info struct {
 	name     string
 	kind     keyKind
-	children []*info
+	children []info
 	explicit bool
 }
 
@@ -48,10 +50,16 @@ func (i *info) clear() {
 	i.children = nil
 }
 
+func (i *info) child(idx int) *info {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&i.children))
+	return (*info)(unsafe.Pointer(sh.Data + unsafe.Sizeof(info{})*uintptr(idx)))
+}
+
 func (i *info) has(k string) (*info, bool) {
-	for _, c := range i.children {
-		if c.name == k {
-			return c, true
+	for idx := range i.children {
+		i := i.child(idx)
+		if i.name == k {
+			return i, true
 		}
 	}
 	return nil, false
@@ -71,15 +79,23 @@ func (i *info) createArrayTable(k string, explicit bool) *info {
 
 func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
 	if i.children == nil {
-		i.children = make([]*info, 0, 8)
+		i.children = make([]info, 0, 8)
+	} else if cap(i.children)-len(i.children) == 0 {
+		old := i.children
+		i.children = make([]info, len(i.children), cap(i.children)*2)
+		copy(i.children, old)
 	}
 
-	x := &info{
-		name:     k,
-		kind:     kind,
-		explicit: explicit,
-	}
-	i.children = append(i.children, x)
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&i.children))
+	idx := sh.Len
+	sh.Len++
+	x := (*info)(unsafe.Pointer(sh.Data + unsafe.Sizeof(info{})*uintptr(idx)))
+
+	x.name = k
+	x.kind = kind
+	x.explicit = explicit
+	x.children = nil
+
 	return x
 }
 
