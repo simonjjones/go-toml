@@ -686,7 +686,7 @@ func (d *decoder) unmarshalInlineTable(itable *ast.Node, v reflect.Value) error 
 	// structs are always initialized.
 	case reflect.Interface:
 		elem := v.Elem()
-		if !elem.IsValid() {
+		if !elem.IsValid() || elem.Type() != mapStringInterfaceType {
 			elem = reflect.MakeMap(mapStringInterfaceType)
 			v.Set(elem)
 		}
@@ -915,11 +915,34 @@ func (d *decoder) handleKeyValueInner(key ast.Iterator, value *ast.Node, v refle
 	return v, d.handleValue(value, v)
 }
 
+func (d *decoder) handleKeyValuePartMapStringInterface(m map[string]interface{}, key ast.Iterator, value *ast.Node) error {
+	k := key.Node().ParsedString()
+	mv := m[k]
+	x := reflect.ValueOf(&mv).Elem()
+
+	mv2, err := d.handleKeyValueInner(key, value, x)
+	if err != nil {
+		return err
+	}
+	m[k] = mv2.Interface()
+	return nil
+}
+
 func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflect.Value) (reflect.Value, error) {
 	// First, dispatch over v to make sure it is a valid object.
 	// There is no guarantee over what it could be.
 	switch v.Kind() {
 	case reflect.Map:
+		if v.Type() == mapStringInterfaceType {
+			if v.IsNil() {
+				v = reflect.MakeMap(v.Type())
+			}
+
+			m := v.Interface().(map[string]interface{})
+			err := d.handleKeyValuePartMapStringInterface(m, key, value)
+			return v, err
+		}
+
 		mk := reflect.ValueOf(key.Node().ParsedString())
 
 		keyType := v.Type().Key()
