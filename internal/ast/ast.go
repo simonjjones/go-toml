@@ -108,7 +108,7 @@ func (n *Node) Next() *Node {
 // Child returns a ptr to the first child node of this node. Other children
 // can be accessed calling Next on the first child.
 // Returns an invalid Node if there is none.
-func (n Node) Child() *Node {
+func (n *Node) Child() *Node {
 	if n.child <= 0 {
 		return nil
 	}
