@@ -1,7 +1,6 @@
 package ast
 
 import (
-	"fmt"
 	"reflect"
 	"unsafe"
 )
@@ -124,19 +123,26 @@ func (n *Node) Valid() bool {
 // otherwise.
 // They are guaranteed to be all be of the Kind Key. A simple key would return
 // just one element.
+//
+// You can use KeyValueKey or TableKey if you already know the Kind of node.
 func (n *Node) Key() Iterator {
 	switch n.Kind {
 	case KeyValue:
-		value := n.Child()
-		if !value.Valid() {
-			panic(fmt.Errorf("KeyValue should have at least two children"))
-		}
-		return Iterator{node: value.Next()}
+		return n.KeyValueKey()
 	case Table, ArrayTable:
-		return Iterator{node: n.Child()}
+		return n.TableKey()
 	default:
 		panic("not supported")
 	}
+}
+
+func (n *Node) KeyValueKey() Iterator {
+	value := n.Child()
+	return Iterator{node: value.Next()}
+}
+
+func (n *Node) TableKey() Iterator {
+	return Iterator{node: n.Child()}
 }
 
 // Value returns a pointer to the value node of a KeyValue.
@@ -149,10 +155,4 @@ func (n *Node) Value() *Node {
 // Children returns an iterator over a node's children.
 func (n *Node) Children() Iterator {
 	return Iterator{node: n.Child()}
-}
-
-func assertKind(k Kind, n Node) {
-	if n.Kind != k {
-		panic(fmt.Errorf("method was expecting a %s, not a %s", k, n.Kind))
-	}
 }

@@ -229,23 +229,24 @@ func (d *decoder) handleRootExpression(expr *ast.Node, v reflect.Value) error {
 	case ast.Table:
 		d.skipUntilTable = false
 		d.strict.EnterTable(expr)
-		x, err = d.handleTable(expr.Key(), v)
+		x, err = d.handleTable(expr.TableKey(), v)
 	case ast.ArrayTable:
 		d.skipUntilTable = false
 		d.strict.EnterArrayTable(expr)
-		x, err = d.handleArrayTable(expr.Key(), v)
+		x, err = d.handleArrayTable(expr.TableKey(), v)
 	default:
 		panic(fmt.Errorf("parser should not permit expression of kind %s at document root", expr.Kind))
 	}
 
-	if d.skipUntilTable {
-		if expr.Kind == ast.Table || expr.Kind == ast.ArrayTable {
-			d.strict.MissingTable(expr)
-		}
-	} else if err == nil {
-		if v != x {
-			v.Set(x)
-		}
+	if d.skipUntilTable && (expr.Kind == ast.Table || expr.Kind == ast.ArrayTable) {
+		// If one of the Table or ArrayTable expression set the skipUntilTable
+		// flag, it means that expression couldn't match to the Go struct.
+		d.strict.MissingTable(expr)
+	} else if err == nil && v != x {
+		// Set the root value in case one of the handle* function changed it.
+		// It could happen when root was a nil interface for example, or had
+		// the wrong type.
+		v.Set(x)
 	}
 
 	return err
@@ -917,7 +918,7 @@ func (d *decoder) unmarshalString(value *ast.Node, v reflect.Value) error {
 func (d *decoder) handleKeyValue(expr *ast.Node, v reflect.Value) (reflect.Value, error) {
 	d.strict.EnterKeyValue(expr)
 
-	v, err := d.handleKeyValueInner(expr.Key(), expr.Value(), v)
+	v, err := d.handleKeyValueInner(expr.KeyValueKey(), expr.Value(), v)
 
 	if d.skipUntilTable {
 		d.strict.MissingField(expr)
