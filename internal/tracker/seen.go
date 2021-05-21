@@ -47,7 +47,7 @@ type info struct {
 }
 
 func (i *info) clear() {
-	i.children = nil
+	i.children = i.children[:0]
 }
 
 func (i *info) child(idx int) *info {
