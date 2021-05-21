@@ -24,7 +24,7 @@ func (b *Builder) NodeAt(ref Reference) *Node {
 
 func (b *Builder) Reset() {
 	if cap(b.tree.nodes) == 0 {
-		b.tree.nodes = make([]Node, 0, 32)
+		b.tree.nodes = make([]Node, 0, 8)
 	} else {
 		b.tree.nodes = b.tree.nodes[:0]
 	}
