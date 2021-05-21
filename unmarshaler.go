@@ -272,9 +272,7 @@ func makeInterfaceValue(last bool) reflect.Value {
 func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) (reflect.Value, error) {
 	switch v.Kind() {
 	case reflect.Interface:
-		last := !key.Node().Next().Valid()
-
-		if last {
+		if key.Last() {
 			elem := v.Elem()
 			if !elem.IsValid() {
 				elem = reflect.New(sliceInterfaceType).Elem()
@@ -308,9 +306,7 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 
 		return v, nil
 	case reflect.Slice:
-		last := !key.Node().Next().Valid()
-
-		if last {
+		if key.Last() {
 			elem := reflect.New(v.Type().Elem()).Elem()
 			elem, err := d.handleArrayTable(key, elem)
 			if err != nil {
@@ -330,9 +326,7 @@ func (d *decoder) handleArrayTableCollection(key ast.Iterator, v reflect.Value) 
 		}
 		return v, err
 	case reflect.Array:
-		last := !key.Node().Next().Valid()
-
-		idx := d.arrayIndex(last, v)
+		idx := d.arrayIndex(key.Last(), v)
 		if idx >= v.Len() {
 			return v, fmt.Errorf("toml: cannot decode array table into %s at position %d", v.Type(), idx)
 		}
@@ -382,18 +376,14 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 			t := v.Type().Elem()
 			if t.Kind() == reflect.Interface {
-				last := !key.Node().Next().Valid()
-
-				mv = makeInterfaceValue(last)
+				mv = makeInterfaceValue(key.Last())
 			} else {
 				mv = reflect.New(v.Type().Elem()).Elem()
 			}
 		} else if mv.Kind() == reflect.Interface {
 			mv = mv.Elem()
 			if !mv.IsValid() {
-				last := !key.Node().Next().Valid()
-
-				mv = makeInterfaceValue(last)
+				mv = makeInterfaceValue(key.Last())
 			}
 		}
 
@@ -988,12 +978,6 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value *ast.Node, v reflec
 		origMv := mv
 		if !mv.IsValid() {
 			mv = reflect.New(v.Type().Elem()).Elem()
-		} else {
-			last := !key.Node().Next().Valid()
-			if last {
-				var x interface{}
-				mv = reflect.ValueOf(&x).Elem()
-			}
 		}
 
 		mv, err := d.handleKeyValueInner(key, value, mv)

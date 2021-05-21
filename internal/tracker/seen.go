@@ -128,7 +128,7 @@ func (s *SeenTracker) checkTable(node *ast.Node) error {
 	it := node.Key()
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
-		if !it.Node().Next().Valid() {
+		if it.Last() {
 			break
 		}
 
@@ -167,7 +167,7 @@ func (s *SeenTracker) checkArrayTable(node *ast.Node) error {
 
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
-		if !it.Node().Next().Valid() {
+		if it.Last() {
 			break
 		}
 

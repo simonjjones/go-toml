@@ -34,6 +34,10 @@ func (c *Iterator) Node() *Node {
 	return c.node
 }
 
+func (c *Iterator) Last() bool {
+	return c.node.next == 0
+}
+
 // Root contains a full AST.
 //
 // It is immutable once constructed with Builder.
