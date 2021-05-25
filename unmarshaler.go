@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/pelletier/go-toml/v2/internal/ast"
 	"github.com/pelletier/go-toml/v2/internal/tracker"
@@ -611,7 +613,54 @@ func (d *decoder) handleValue(value *ast.Node, v reflect.Value) error {
 	}
 }
 
+var useless interface{}
+var interfaceType = reflect.TypeOf(useless)
+var interfaceSize = unsafe.Sizeof(useless)
+
+func (d *decoder) unmarshalArraySliceInterface(array *ast.Node, v reflect.Value) error {
+	s := v.Interface().([]interface{})
+	hasReallocated := false
+
+	it := array.Children()
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&s))
+
+	for it.Next() {
+		n := it.Node()
+
+		if cap(s)-len(s) == 0 {
+			hasReallocated = true
+			old := s
+			s = make([]interface{}, len(s), cap(s)*2)
+			copy(s, old)
+			sh = (*reflect.SliceHeader)(unsafe.Pointer(&s))
+		}
+
+		idx := sh.Len
+		sh.Len++
+		//ptr := (*interface{})()
+		log.Println("==>", interfaceType)
+		elem := reflect.NewAt(interfaceType, unsafe.Pointer(sh.Data+interfaceSize*uintptr(idx)))
+
+		err := d.handleValue(n, elem)
+		if err != nil {
+			return err
+		}
+
+		//v.Set(reflect.Append(v, elem))
+	}
+
+	if hasReallocated {
+		v.Set(reflect.ValueOf(s))
+	}
+
+	return nil
+}
+
 func (d *decoder) unmarshalArray(array *ast.Node, v reflect.Value) error {
+	if v.Type() == sliceInterfaceType {
+		return d.unmarshalArraySliceInterface(array, v)
+	}
+
 	switch v.Kind() {
 	case reflect.Slice:
 		if v.IsNil() {
