@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pelletier/go-toml/v2/internal/ast"
+	"github.com/segmentio/fasthash/fnv1a"
 )
 
 type keyKind uint8
@@ -32,64 +33,30 @@ func (k keyKind) String() string {
 // SeenTracker tracks which keys have been seen with which TOML type to flag duplicates
 // and mismatches according to the spec.
 type SeenTracker struct {
-	root    *info
-	current *info
+	root    uint64
+	current uint64
+	entries []entry
 }
 
-type info struct {
-	parent   *info
+type entry struct {
+	hash     uint64
+	parent   uint64
 	kind     keyKind
-	children map[string]*info
 	explicit bool
-}
-
-func (i *info) Clear() {
-	i.children = nil
-}
-
-func (i *info) Has(k string) (*info, bool) {
-	c, ok := i.children[k]
-	return c, ok
-}
-
-func (i *info) SetKind(kind keyKind) {
-	i.kind = kind
-}
-
-func (i *info) CreateTable(k string, explicit bool) *info {
-	return i.createChild(k, tableKind, explicit)
-}
-
-func (i *info) CreateArrayTable(k string, explicit bool) *info {
-	return i.createChild(k, arrayTableKind, explicit)
-}
-
-func (i *info) createChild(k string, kind keyKind, explicit bool) *info {
-	if i.children == nil {
-		i.children = make(map[string]*info, 1)
-	}
-
-	x := &info{
-		parent:   i,
-		kind:     kind,
-		explicit: explicit,
-	}
-	i.children[k] = x
-	return x
 }
 
 // CheckExpression takes a top-level node and checks that it does not contain keys
 // that have been seen in previous calls, and validates that types are consistent.
 func (s *SeenTracker) CheckExpression(node ast.Node) error {
-	if s.root == nil {
-		s.root = &info{
-			kind: tableKind,
-		}
-		s.current = s.root
+	if s.entries == nil {
+		s.entries = make([]entry, 0, 8)
+		s.root = fnv1a.Init64
+		s.current = fnv1a.Init64
 	}
+
 	switch node.Kind {
 	case ast.KeyValue:
-		return s.checkKeyValue(s.current, node)
+		return s.checkKeyValue(node)
 	case ast.Table:
 		return s.checkTable(node)
 	case ast.ArrayTable:
@@ -103,36 +70,51 @@ func (s *SeenTracker) checkTable(node ast.Node) error {
 	s.current = s.root
 
 	it := node.Key()
+	h := s.current
+	idx := 0
+
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
 		if !it.Node().Next().Valid() {
 			break
 		}
 
-		k := string(it.Node().Data)
-		child, found := s.current.Has(k)
+		parent := h
+		h = fnv1a.AddUint64(h, 0)
+		h = fnv1a.AddBytes64(h, it.Node().Data)
+
+		var found bool
+		idx, found = s.findHash(h)
+
 		if !found {
-			child = s.current.CreateTable(k, false)
+			idx = len(s.entries)
+			s.create(h, parent, tableKind, false)
 		}
-		s.current = child
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Data)
+	parent := h
+	h = fnv1a.AddUint64(h, 0)
+	h = fnv1a.AddBytes64(h, it.Node().Data)
 
-	i, found := s.current.Has(k)
+	var found bool
+	idx, found = s.findHash(h)
+
 	if found {
-		if i.kind != tableKind {
-			return fmt.Errorf("toml: key %s should be a table, not a %s", k, i.kind)
+		e := s.entries[idx]
+		k := e.kind
+		if k != tableKind {
+			return fmt.Errorf("toml: key %s should be a table, not a %s", string(it.Node().Data), k)
 		}
-		if i.explicit {
-			return fmt.Errorf("toml: table %s already exists", k)
+		if e.explicit {
+			return fmt.Errorf("toml: table %s already exists", string(it.Node().Data))
 		}
-		i.explicit = true
-		s.current = i
+		s.entries[idx].explicit = true
 	} else {
-		s.current = s.current.CreateTable(k, true)
+		s.create(h, parent, tableKind, true)
 	}
+
+	s.current = h
 
 	return nil
 }
@@ -141,6 +123,8 @@ func (s *SeenTracker) checkArrayTable(node ast.Node) error {
 	s.current = s.root
 
 	it := node.Key()
+	h := s.current
+	idx := 0
 
 	// handle the first parts of the key, excluding the last one
 	for it.Next() {
@@ -148,53 +132,111 @@ func (s *SeenTracker) checkArrayTable(node ast.Node) error {
 			break
 		}
 
-		k := string(it.Node().Data)
-		child, found := s.current.Has(k)
+		parent := h
+		h = fnv1a.AddUint64(h, 0)
+		h = fnv1a.AddBytes64(h, it.Node().Data)
+
+		var found bool
+		idx, found = s.findHash(h)
+
 		if !found {
-			child = s.current.CreateTable(k, false)
+			idx = len(s.entries)
+			s.create(h, parent, tableKind, false)
 		}
-		s.current = child
 	}
 
 	// handle the last part of the key
-	k := string(it.Node().Data)
+	parent := h
+	h = fnv1a.AddUint64(h, 0)
+	h = fnv1a.AddBytes64(h, it.Node().Data)
 
-	info, found := s.current.Has(k)
+	var found bool
+	idx, found = s.findHash(h)
+
 	if found {
-		if info.kind != arrayTableKind {
-			return fmt.Errorf("toml: key %s already exists as a %s,  but should be an array table", info.kind, k)
+		e := s.entries[idx]
+		k := e.kind
+		if k != arrayTableKind {
+			return fmt.Errorf("toml: key %s already exists as a %s,  but should be an array table", string(it.Node().Data), k)
 		}
-		info.Clear()
+		s.clear(h, idx)
 	} else {
-		info = s.current.CreateArrayTable(k, true)
+		s.create(h, parent, arrayTableKind, true)
 	}
+	s.current = h
 
-	s.current = info
 	return nil
 }
 
-func (s *SeenTracker) checkKeyValue(context *info, node ast.Node) error {
+// Remove entries that have p as parent, and all their descendents.
+// Starts the search after idx.
+// Preserves order.
+func (s *SeenTracker) clear(p uint64, idx int) {
+	x := clearEntries(p, s.entries[idx+1:])
+	s.entries = s.entries[:idx+1+len(x)]
+}
+
+func clearEntries(p uint64, s []entry) []entry {
+	for i := 0; i < len(s); {
+		if s[i].parent == p {
+			h := s[i].hash
+			copy(s[i:], s[i+1:])
+			s = s[:len(s)-1]
+			rest := clearEntries(h, s[i:])
+			s = s[:i+len(rest)]
+		} else {
+			i++
+		}
+	}
+	return s
+}
+
+func (s *SeenTracker) findHash(h uint64) (int, bool) {
+	for i := range s.entries {
+		if s.entries[i].hash == h {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func (s *SeenTracker) create(h uint64, parent uint64, k keyKind, explicit bool) {
+	s.entries = append(s.entries, entry{
+		hash:     h,
+		parent:   parent,
+		kind:     k,
+		explicit: explicit,
+	})
+}
+
+func (s *SeenTracker) checkKeyValue(node ast.Node) error {
 	it := node.Key()
 
-	// handle the first parts of the key, excluding the last one
+	h := s.current
+	idx := 0
+
 	for it.Next() {
-		k := string(it.Node().Data)
-		child, found := context.Has(k)
+		parent := h
+		h = fnv1a.AddUint64(h, 0)
+		h = fnv1a.AddBytes64(h, it.Node().Data)
+
+		var found bool
+		idx, found = s.findHash(h)
 		if found {
-			if child.kind != tableKind {
-				return fmt.Errorf("toml: expected %s to be a table, not a %s", k, child.kind)
+			if s.entries[idx].kind != tableKind {
+				return fmt.Errorf("toml: expected %s to be a table, not a %s", string(it.Node().Data), s.entries[idx].kind)
 			}
 		} else {
-			child = context.CreateTable(k, false)
+			idx = len(s.entries)
+			s.create(h, parent, tableKind, false)
 		}
-		context = child
 	}
 
+	k := valueKind
 	if node.Value().Kind == ast.InlineTable {
-		context.SetKind(tableKind)
-	} else {
-		context.SetKind(valueKind)
+		k = tableKind
 	}
+	s.entries[idx].kind = k
 
 	return nil
 }
