@@ -77,6 +77,7 @@ var marshalerType = reflect.TypeOf(new(Marshaler)).Elem()
 var unmarshalerType = reflect.TypeOf(new(Unmarshaler)).Elem()
 var textMarshalerType = reflect.TypeOf(new(encoding.TextMarshaler)).Elem()
 var textUnmarshalerType = reflect.TypeOf(new(encoding.TextUnmarshaler)).Elem()
+var marshalerRecType = reflect.TypeOf(new(MarshalerRec)).Elem()
 var localDateType = reflect.TypeOf(LocalDate{})
 var localTimeType = reflect.TypeOf(LocalTime{})
 var localDateTimeType = reflect.TypeOf(LocalDateTime{})
@@ -186,6 +187,14 @@ func callTextMarshaler(mval reflect.Value) ([]byte, error) {
 	return mval.Interface().(encoding.TextMarshaler).MarshalText()
 }
 
+func isCustomMarshalerRec(mtype reflect.Type) bool {
+	return mtype.Implements(marshalerRecType)
+}
+
+func callCustomMarhsalerRec(mval reflect.Value) (interface{}, error) {
+	return mval.Interface().(MarshalerRec).MarshalTOML()
+}
+
 func isCustomUnmarshaler(mtype reflect.Type) bool {
 	return mtype.Implements(unmarshalerType)
 }
@@ -212,6 +221,12 @@ type Marshaler interface {
 // can unmarshal a TOML description of themselves.
 type Unmarshaler interface {
 	UnmarshalTOML(interface{}) error
+}
+
+// MarshalerRec is the interface implemented by types that override their TOML encoding.
+// The returned value is marshaled in place of the receiver
+type MarshalerRec interface {
+	MarshalTOML() (interface{}, error)
 }
 
 /*
@@ -409,6 +424,14 @@ func (e *Encoder) marshal(v interface{}) ([]byte, error) {
 	if isTextMarshaler(mtype) {
 		return callTextMarshaler(sval)
 	}
+	if isCustomMarshalerRec(mtype) {
+		obj, err := callCustomMarhsalerRec(sval)
+		if err != nil {
+			return []byte{}, err
+		}
+
+		return e.marshal(obj)
+	}
 	t, err := e.valueToTree(mtype, sval)
 	if err != nil {
 		return []byte{}, err
@@ -538,6 +561,12 @@ func (e *Encoder) valueToToml(mtype reflect.Type, mval reflect.Value) (interface
 		case isTextMarshaler(mtype):
 			b, err := callTextMarshaler(mval)
 			return string(b), err
+		case isCustomMarshalerRec(mtype):
+			i, err := callCustomMarhsalerRec(mval)
+			if err != nil {
+				return []byte{}, err
+			}
+			return e.valueToToml(reflect.TypeOf(i), reflect.ValueOf(i))
 		default:
 			return e.valueToToml(mtype.Elem(), mval.Elem())
 		}
@@ -551,6 +580,12 @@ func (e *Encoder) valueToToml(mtype reflect.Type, mval reflect.Value) (interface
 	case isTextMarshaler(mtype):
 		b, err := callTextMarshaler(mval)
 		return string(b), err
+	case isCustomMarshalerRec(mtype):
+		i, err := callCustomMarhsalerRec(mval)
+		if err != nil {
+			return []byte{}, err
+		}
+		return e.valueToToml(reflect.TypeOf(i), reflect.ValueOf(i))
 	case isTree(mtype):
 		return e.valueToTree(mtype, mval)
 	case isOtherSequence(mtype), isCustomMarshalerSequence(mtype), isTextMarshalerSequence(mtype):

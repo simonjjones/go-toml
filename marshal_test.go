@@ -1023,6 +1023,120 @@ string = "hello"
 	}
 }
 
+type customMarshalerRecChild struct {
+	Primitive string
+}
+
+type customMarshalerRec struct {
+	Primitive    string
+	Structural   customMarshalerRecChild
+	Unstructured map[string]interface{}
+}
+
+var testCustomMarshalerRec = customMarshalerRec{
+	Primitive: "a-string-primitive",
+	Structural: customMarshalerRecChild{
+		Primitive: "a-child-string-primitive",
+	},
+	Unstructured: map[string]interface{}{"a-map": []map[string]interface{}{{"key": "value"}}},
+}
+
+func (c customMarshalerRec) MarshalTOML() (interface{}, error) {
+	metadata := map[string]interface{}{
+		"Primitive":  c.Primitive,
+		"Structural": c.Structural,
+	}
+
+	for key, value := range c.Unstructured {
+		metadata[key] = value
+	}
+
+	return metadata, nil
+}
+
+var customMarshalerRecExpectation = []byte(`Primitive = "a-string-primitive"
+
+[Structural]
+  Primitive = "a-child-string-primitive"
+
+[[a-map]]
+  key = "value"
+`)
+
+func TestCustomMarshalerRec(t *testing.T) {
+	m := testCustomMarshalerRec
+
+	result, err := Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(result, customMarshalerRecExpectation) {
+		t.Errorf(
+			"Bad custom receiver marshaler: expected\n-----\n%s\n-----\ngot\n-----\n%s\n-----\n",
+			customMarshalerRecExpectation, result,
+		)
+	}
+}
+
+type customMarshalerRecPtr struct{}
+
+func (c *customMarshalerRecPtr) MarshalTOML() (interface{}, error) {
+	return map[string]interface{}{"default-key": "default-value"}, nil
+}
+
+var customMarshalerRecPtrExpectation = []byte(`default-key = "default-value"
+`)
+
+func TestCustomMarshalerRecPtr(t *testing.T) {
+	m := &customMarshalerRecPtr{}
+
+	result, err := Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(result, customMarshalerRecPtrExpectation) {
+		t.Errorf(
+			"Bad custom receiver marshaler: expected\n-----\n%s\n-----\ngot\n-----\n%s\n-----\n",
+			customMarshalerRecPtrExpectation, result,
+		)
+	}
+}
+
+type customMarshalerRecParent struct {
+	Data customMarshalerRec
+}
+
+var nestedCustomMarshalerRecExpectation = []byte(`
+[Data]
+  Primitive = "a-string-primitive"
+
+  [Data.Structural]
+    Primitive = "a-child-string-primitive"
+
+  [[Data.a-map]]
+    key = "value"
+`)
+
+func TestNestedCustomMarshalerRec(t *testing.T) {
+	m := customMarshalerRecParent{
+		Data: testCustomMarshalerRec,
+	}
+
+	result, err := Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(result, nestedCustomMarshalerRecExpectation) {
+		t.Errorf(
+			"Bad custom receiver marshaler: expected\n-----\n%s\n-----\ngot\n-----\n%s\n-----\n",
+			nestedCustomMarshalerRecExpectation, result,
+		)
+	}
+}
+
 type textMarshaler struct {
 	FirstName string
 	LastName  string
@@ -1105,7 +1219,7 @@ func (m precedentMarshaler) MarshalTOML() ([]byte, error) {
 }
 
 func TestPrecedentMarshaler(t *testing.T) {
-	m := textMarshaler{FirstName: "Sally", LastName: "Fields"}
+	m := precedentMarshaler{FirstName: "Sally", LastName: "Fields"}
 
 	result, err := Marshal(m)
 	if err != nil {
