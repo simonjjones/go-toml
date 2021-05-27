@@ -16,7 +16,6 @@ import (
 
 // nolint:funlen
 func TestUnmarshal_Integers(t *testing.T) {
-
 	examples := []struct {
 		desc     string
 		input    string
@@ -87,7 +86,6 @@ func TestUnmarshal_Integers(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			doc := doc{}
 			err := toml.Unmarshal([]byte(`A = `+e.input), &doc)
 			if e.err {
@@ -193,7 +191,6 @@ func TestUnmarshal_Floats(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			doc := doc{}
 			err := toml.Unmarshal([]byte(`A = `+e.input), &doc)
 			require.NoError(t, err)
@@ -208,7 +205,6 @@ func TestUnmarshal_Floats(t *testing.T) {
 
 //nolint:funlen
 func TestUnmarshal(t *testing.T) {
-
 	type test struct {
 		target   interface{}
 		expected interface{}
@@ -1149,7 +1145,6 @@ B = "data"`,
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			if e.skip {
 				t.Skip()
 			}
@@ -1290,7 +1285,6 @@ func (m Map458) A(s string) Slice458 {
 }
 
 func TestIssue458(t *testing.T) {
-
 	s := []byte(`[[package]]
 dependencies = ["regex"]
 name = "decode"
@@ -1310,7 +1304,6 @@ version = "0.1.0"`)
 }
 
 func TestIssue252(t *testing.T) {
-
 	type config struct {
 		Val1 string `toml:"val1"`
 		Val2 string `toml:"val2"`
@@ -1331,7 +1324,6 @@ val1 = "test1"
 }
 
 func TestIssue494(t *testing.T) {
-
 	data := `
 foo = 2021-04-08
 bar = 2021-04-08
@@ -1347,7 +1339,6 @@ bar = 2021-04-08
 }
 
 func TestIssue507(t *testing.T) {
-
 	data := []byte{'0', '=', '\n', '0', 'a', 'm', 'e'}
 	m := map[string]interface{}{}
 	err := toml.Unmarshal(data, &m)
@@ -1356,7 +1347,6 @@ func TestIssue507(t *testing.T) {
 
 //nolint:funlen
 func TestUnmarshalDecodeErrors(t *testing.T) {
-
 	examples := []struct {
 		desc string
 		data string
@@ -1589,7 +1579,6 @@ world'`,
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			m := map[string]interface{}{}
 			err := toml.Unmarshal([]byte(e.data), &m)
 			require.Error(t, err)
@@ -1609,7 +1598,6 @@ world'`,
 
 //nolint:funlen
 func TestLocalDateTime(t *testing.T) {
-
 	examples := []struct {
 		desc  string
 		input string
@@ -1659,7 +1647,6 @@ func TestLocalDateTime(t *testing.T) {
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			t.Log("input:", e.input)
 			doc := `a = ` + e.input
 			m := map[string]toml.LocalDateTime{}
@@ -1675,7 +1662,6 @@ func TestLocalDateTime(t *testing.T) {
 }
 
 func TestIssue287(t *testing.T) {
-
 	b := `y=[[{}]]`
 	v := map[string]interface{}{}
 	err := toml.Unmarshal([]byte(b), &v)
@@ -1692,7 +1678,6 @@ func TestIssue287(t *testing.T) {
 }
 
 func TestIssue508(t *testing.T) {
-
 	type head struct {
 		Title string `toml:"title"`
 	}
@@ -1711,7 +1696,6 @@ func TestIssue508(t *testing.T) {
 
 //nolint:funlen
 func TestDecoderStrict(t *testing.T) {
-
 	examples := []struct {
 		desc     string
 		input    string
@@ -1782,7 +1766,6 @@ bar = 42
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			t.Run("strict", func(t *testing.T) {
 				r := strings.NewReader(e.input)
 				d := toml.NewDecoder(r)

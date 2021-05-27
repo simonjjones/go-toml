@@ -14,7 +14,6 @@ import (
 
 //nolint:funlen
 func TestMarshal(t *testing.T) {
-
 	someInt := 42
 
 	type structInline struct {
@@ -515,7 +514,6 @@ K = 42`,
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			b, err := toml.Marshal(e.v)
 			if e.err {
 				require.Error(t, err)
@@ -525,6 +523,8 @@ K = 42`,
 
 			require.NoError(t, err)
 			equalStringsIgnoreNewlines(t, e.expected, string(b))
+
+			t.Log("=>\n", string(b))
 
 			// make sure the output is always valid TOML
 			defaultMap := map[string]interface{}{}
@@ -540,6 +540,8 @@ K = 42`,
 
 				err := enc.Encode(e.v)
 				require.NoError(t, err)
+
+				t.Log("XX\n", string(buf.Bytes()))
 
 				inlineMap := map[string]interface{}{}
 				err = toml.Unmarshal(buf.Bytes(), &inlineMap)
@@ -607,7 +609,6 @@ func equalStringsIgnoreNewlines(t *testing.T, expected string, actual string) {
 
 //nolint:funlen
 func TestMarshalIndentTables(t *testing.T) {
-
 	examples := []struct {
 		desc     string
 		v        interface{}
@@ -658,7 +659,6 @@ root = 'value0'
 	for _, e := range examples {
 		e := e
 		t.Run(e.desc, func(t *testing.T) {
-
 			var buf strings.Builder
 			enc := toml.NewEncoder(&buf)
 			enc.SetIndentTables(true)
@@ -681,21 +681,18 @@ func (c *customTextMarshaler) MarshalText() ([]byte, error) {
 }
 
 func TestMarshalTextMarshaler_NoRoot(t *testing.T) {
-
 	c := customTextMarshaler{}
 	_, err := toml.Marshal(&c)
 	require.Error(t, err)
 }
 
 func TestMarshalTextMarshaler_Error(t *testing.T) {
-
 	m := map[string]interface{}{"a": &customTextMarshaler{value: 1}}
 	_, err := toml.Marshal(m)
 	require.Error(t, err)
 }
 
 func TestMarshalTextMarshaler_ErrorInline(t *testing.T) {
-
 	type s struct {
 		A map[string]interface{} `inline:"true"`
 	}
@@ -709,7 +706,6 @@ func TestMarshalTextMarshaler_ErrorInline(t *testing.T) {
 }
 
 func TestMarshalTextMarshaler(t *testing.T) {
-
 	m := map[string]interface{}{"a": &customTextMarshaler{value: 2}}
 	r, err := toml.Marshal(m)
 	require.NoError(t, err)
@@ -723,7 +719,6 @@ func (b *brokenWriter) Write([]byte) (int, error) {
 }
 
 func TestEncodeToBrokenWriter(t *testing.T) {
-
 	w := brokenWriter{}
 	enc := toml.NewEncoder(&w)
 	err := enc.Encode(map[string]string{"hello": "world"})
@@ -731,7 +726,6 @@ func TestEncodeToBrokenWriter(t *testing.T) {
 }
 
 func TestEncoderSetIndentSymbol(t *testing.T) {
-
 	var w strings.Builder
 	enc := toml.NewEncoder(&w)
 	enc.SetIndentTables(true)
@@ -745,7 +739,6 @@ func TestEncoderSetIndentSymbol(t *testing.T) {
 }
 
 func TestIssue436(t *testing.T) {
-
 	data := []byte(`{"a": [ { "b": { "c": "d" } } ]}`)
 
 	var v interface{}
@@ -765,7 +758,6 @@ c = 'd'
 }
 
 func TestIssue424(t *testing.T) {
-
 	type Message1 struct {
 		Text string
 	}

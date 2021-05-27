@@ -70,3 +70,31 @@ func TestFastExistingMap(t *testing.T) {
 		},
 	}, m)
 }
+
+func TestFastArrayTable(t *testing.T) {
+	b := []byte(`
+	[root]
+	[[root.nested]]
+	name = 'Bob'
+	[[root.nested]]
+	name = 'Alice'
+	`)
+
+	m := map[string]interface{}{}
+
+	err := toml.Unmarshal(b, &m)
+	require.NoError(t, err)
+
+	require.Equal(t, map[string]interface{}{
+		"root": map[string]interface{}{
+			"nested": []interface{}{
+				map[string]interface{}{
+					"name": "Bob",
+				},
+				map[string]interface{}{
+					"name": "Alice",
+				},
+			},
+		},
+	}, m)
+}
