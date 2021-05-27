@@ -544,7 +544,11 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 	if v.Type().Implements(textUnmarshalerType) {
 		err := v.Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
 		if err != nil {
-			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
+			return false, fmt.Errorf("toml: error calling UnmarshalText: %w", err)
+			// TODO: use newDecodeError.
+			//   Problem: node.Data is pointing to a parsed string, so it is
+			//   not a reference to the doc anymore.
+			// return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
 		}
 
 		return true, nil
@@ -553,7 +557,9 @@ func tryTextUnmarshaler(node ast.Node, v reflect.Value) (bool, error) {
 	if v.CanAddr() && v.Addr().Type().Implements(textUnmarshalerType) {
 		err := v.Addr().Interface().(encoding.TextUnmarshaler).UnmarshalText(node.Data)
 		if err != nil {
-			return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
+			return false, fmt.Errorf("toml: error calling UnmarshalText: %w", err)
+			// TODO: same as above
+			// return false, newDecodeError(node.Data, "error calling UnmarshalText: %w", err)
 		}
 
 		return true, nil
@@ -1110,6 +1116,7 @@ func assertNode(expected ast.Kind, node ast.Node) {
 		panic(fmt.Sprintf("expected node of kind %s, not %s", expected, node.Kind))
 	}
 }
+
 func assertSettable(v reflect.Value) {
 	if !v.CanAddr() {
 		panic(fmt.Errorf("%s is not addressable (kind: %s)", v, v.Kind()))
