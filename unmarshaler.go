@@ -388,10 +388,7 @@ func (d *decoder) handleArrayTablePart(key ast.Iterator, v reflect.Value) (refle
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil {
-			return reflect.Value{}, err
-		}
+		f, found := structField(v, string(key.Node().Data))
 		if !found {
 			d.skipUntilTable = true
 			return reflect.Value{}, nil
@@ -498,10 +495,7 @@ func (d *decoder) handleTablePart(key ast.Iterator, v reflect.Value) (reflect.Va
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil {
-			return reflect.Value{}, err
-		}
+		f, found := structField(v, string(key.Node().Data))
 		if !found {
 			d.skipUntilTable = true
 			return reflect.Value{}, nil
@@ -971,10 +965,7 @@ func (d *decoder) handleKeyValuePart(key ast.Iterator, value ast.Node, v reflect
 
 		v.SetMapIndex(mk, mv)
 	case reflect.Struct:
-		f, found, err := structField(v, string(key.Node().Data))
-		if err != nil {
-			return reflect.Value{}, err
-		}
+		f, found := structField(v, string(key.Node().Data))
 		if !found {
 			d.skipUntilTable = true
 			return v, nil
@@ -1057,7 +1048,7 @@ var globalFieldPathsCache = fieldPathsCache{
 	l: sync.RWMutex{},
 }
 
-func structField(v reflect.Value, name string) (reflect.Value, bool, error) {
+func structField(v reflect.Value, name string) (reflect.Value, bool) {
 	//nolint:godox
 	// TODO: cache this, and reduce allocations
 	fieldPaths, ok := globalFieldPathsCache.get(v.Type())
@@ -1105,10 +1096,10 @@ func structField(v reflect.Value, name string) (reflect.Value, bool, error) {
 	}
 
 	if !ok {
-		return reflect.Value{}, false, nil
+		return reflect.Value{}, false
 	}
 
-	return v.FieldByIndex(path), true, nil
+	return v.FieldByIndex(path), true
 }
 
 func assertNode(expected ast.Kind, node ast.Node) {
@@ -1123,14 +1114,5 @@ func assertSettable(v reflect.Value) {
 	}
 	if !v.CanSet() {
 		panic(fmt.Errorf("%s is not settable", v))
-	}
-}
-
-func assertObject(v reflect.Value) {
-	switch v.Kind() {
-	case reflect.Map:
-	case reflect.Struct:
-	default:
-		panic(fmt.Errorf("expected %s to be a Map or Struct, not %s", v, v.Kind()))
 	}
 }
